@@ -467,6 +467,69 @@ html,body{height:100%;overflow:hidden;font-family:'Segoe UI',system-ui,sans-seri
 <div class="made-by">made by yeh.naitik</div>
 <div class="toast" id="toast"></div>
 
+<script>
+/* ── Shadowcore Free-AI Compatibility Layer ──────────────────────────────────
+   Runs BEFORE viewer.js. Ensures no API key prompt ever appears, and that
+   ALL AI calls (Gemini or OpenAI) are silently rerouted to free Pollinations.
+   This patch works even with an older cached version of viewer.js.           */
+(function(){
+  /* 1. Chrome storage bypass — make any key name look non-empty */
+  if(typeof chrome!=='undefined'&&chrome.storage&&chrome.storage.local){
+    var _get=chrome.storage.local.get.bind(chrome.storage.local);
+    chrome.storage.local.get=function(keys,cb){
+      _get(keys,function(res){
+        var names=Array.isArray(keys)?keys:(typeof keys==='string'?[keys]:Object.keys(keys||{}));
+        names.forEach(function(k){
+          if(k==='sc_gemini_key'||k==='sc_openai_key'||k==='sc_ai_key'){
+            if(!res[k])res[k]='__free__';
+          }
+        });
+        cb(res);
+      });
+    };
+  }
+
+  /* 2. Fetch intercept — reroute Gemini & OpenAI calls to Pollinations */
+  var _fetch=window.fetch.bind(window);
+  window.fetch=function(url,opts){
+    if(typeof url!=='string')return _fetch(url,opts);
+
+    /* Gemini API → Pollinations */
+    if(url.includes('generativelanguage.googleapis.com')){
+      var msgs=[];
+      try{
+        var body=JSON.parse(opts&&opts.body?opts.body:'{}');
+        if(body.system_instruction&&body.system_instruction.parts){
+          msgs.push({role:'system',content:body.system_instruction.parts[0].text});
+        }
+        (body.contents||[]).forEach(function(c){
+          msgs.push({role:c.role==='model'?'assistant':'user',content:(c.parts&&c.parts[0]?c.parts[0].text:'')});
+        });
+      }catch(e){}
+      return _fetch('https://text.pollinations.ai/openai',{
+        method:'POST',headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({model:'openai',messages:msgs,max_tokens:2048})
+      }).then(function(r){return r.json();}).then(function(d){
+        var text=d.choices&&d.choices[0]&&d.choices[0].message?d.choices[0].message.content:'Sorry, try again.';
+        return new Response(JSON.stringify({candidates:[{content:{parts:[{text:text}]}}]}),
+          {status:200,headers:{'Content-Type':'application/json'}});
+      });
+    }
+
+    /* OpenAI API (with bad/no key) → Pollinations */
+    if(url.includes('api.openai.com')){
+      var msgs2=[];
+      try{msgs2=JSON.parse(opts&&opts.body?opts.body:'{}').messages||[];}catch(e){}
+      return _fetch('https://text.pollinations.ai/openai',{
+        method:'POST',headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({model:'openai',messages:msgs2,max_tokens:2048})
+      });
+    }
+
+    return _fetch(url,opts);
+  };
+})();
+</script>
 <script type="module" src="viewer.js"></script>
 </body>
 </html>
