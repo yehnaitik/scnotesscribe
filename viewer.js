@@ -501,9 +501,9 @@ async function extractTextFromRegion(screenX,screenY,w,h){
 let aiOpen=false;
 let aiPanelWidth=380;
 const STORAGE_KEY='sc_ai_chat';
-const KEY_APIKEY='sc_gemini_key';
-let chatHistory=[]; // {role:'user'|'model', parts:[{text}]}
-let geminiKey='';
+const KEY_APIKEY='sc_openai_key';
+let chatHistory=[]; // {role:'user'|'assistant', parts:[{text}]}
+let openaiKey='';
 let aiFullscreen=false;
 
 function openAiPanel(){
@@ -565,8 +565,8 @@ document.addEventListener('mouseup',()=>{resizerDragging=false;aiResizer.classLi
 // ── API Key management ────────────────────────────────────────────────────────
 function checkApiKey(){
   chrome.storage.local.get([KEY_APIKEY],data=>{
-    geminiKey=data[KEY_APIKEY]||'';
-    if(!geminiKey){showSetupScreen();}else{showChatScreen();}
+    openaiKey=data[KEY_APIKEY]||'';
+    if(!openaiKey){showSetupScreen();}else{showChatScreen();}
   });
 }
 
@@ -575,16 +575,16 @@ function showSetupScreen(){
   <div class="ai-setup">
     <div style="font-size:40px">🤖</div>
     <h3>Connect Studyink AI</h3>
-    <p>Enter your free <strong style="color:#a5b4fc">Google Gemini API key</strong> to start asking AI about your PDFs. It's 100% free.</p>
-    <input type="password" class="ai-setup-input" id="key-input" placeholder="AIzaSy…">
+    <p>Enter your <strong style="color:#a5b4fc">OpenAI API key</strong> to start asking AI about your PDFs with GPT-4o mini.</p>
+    <input type="password" class="ai-setup-input" id="key-input" placeholder="sk-…">
     <button class="ai-setup-btn" id="key-save-btn">Connect AI →</button>
-    <a class="ai-setup-link" href="https://aistudio.google.com/app/apikey" target="_blank">Get a free API key from Google AI Studio ↗</a>
-    <p style="font-size:11px;color:#1e1e40;margin-top:4px">Your key is stored locally in this extension only.</p>
+    <a class="ai-setup-link" href="https://platform.openai.com/api-keys" target="_blank">Get your API key from OpenAI Platform ↗</a>
+    <p style="font-size:11px;color:#1e1e40;margin-top:4px">Stored locally in this extension only. Never sent anywhere else.</p>
   </div>`;
   $('key-save-btn').onclick=()=>{
     const k=($('key-input').value||'').trim();
-    if(k.length<20){toast('Please enter a valid API key');return;}
-    chrome.storage.local.set({[KEY_APIKEY]:k},()=>{geminiKey=k;showChatScreen();toast('AI connected!');});
+    if(!k.startsWith('sk-')||k.length<30){toast('Please enter a valid OpenAI API key (starts with sk-)');return;}
+    chrome.storage.local.set({[KEY_APIKEY]:k},()=>{openaiKey=k;showChatScreen();toast('AI connected!');});
   };
 }
 
@@ -593,7 +593,7 @@ function showChatScreen(){
 }
 
 $('ai-settings-btn').onclick=()=>{
-  chrome.storage.local.remove([KEY_APIKEY],()=>{geminiKey='';chatHistory=[];showSetupScreen();});
+  chrome.storage.local.remove([KEY_APIKEY],()=>{openaiKey='';chatHistory=[];showSetupScreen();});
 };
 
 // ── Chat history ──────────────────────────────────────────────────────────────
@@ -737,9 +737,9 @@ function renderMarkdown(text){
   return out.join('\n');
 }
 
-// ── Send message to AI ────────────────────────────────────────────────────────
+// ── Send message to AI (OpenAI GPT-4o mini) ──────────────────────────────────
 async function sendToAI(userText){
-  if(!geminiKey){showSetupScreen();return;}
+  if(!openaiKey){showSetupScreen();return;}
   const localCrop=cropDataUrl;const localCropText=cropText;
   cropDataUrl=null;cropText='';const pending=$('pending-crop');if(pending)pending.remove();
 
@@ -755,47 +755,50 @@ async function sendToAI(userText){
     page.cleanup();
   }catch{}
 
-  const systemCtx=`You are Studyink AI, an expert academic assistant embedded in Shadowcore Studyink PDF viewer. You help students understand their study materials deeply.
+  const systemMsg={
+    role:'system',
+    content:`You are Studyink AI, an expert academic assistant embedded in Shadowcore Studyink PDF viewer. You help students understand their study materials at a deep level — like a brilliant tutor who always explains clearly.
 
-PDF Context (current page ${currentPage} of ${numPages}, file: ${fileName}):
-${pageContext?`"${pageContext}"`:' (text extraction unavailable)'}
+PDF Context (current page ${currentPage} of ${numPages}, file: "${fileName}"):
+${pageContext?`"${pageContext}"`:' (text extraction unavailable for this page)'}
 
-Instructions:
-- Give thorough, well-structured answers
-- Use markdown formatting: **bold** for key terms, ## headers for sections, bullet points for lists
-- For math, wrap LaTeX in $...$ (inline) or $$...$$ (block) — e.g. $E = mc^2$
-- Use code blocks for code
-- Be concise yet complete — like a great tutor
-- Remember our conversation history for context`;
+Response formatting rules:
+- Use markdown: **bold** key terms, ## section headers, bullet lists, numbered steps
+- For ALL math expressions wrap in $...$ inline or $$...$$ block — e.g. $E = mc^2$ or $$\\int_0^\\infty e^{-x}dx = 1$$
+- Use triple-backtick code blocks for code
+- Structure complex answers with clear headers and spacing
+- Be thorough but don't pad — quality over quantity
+- Always reference the PDF content when answering`
+  };
 
   appendMessage('user',userText,localCrop);
   showThinking();aiSend.disabled=true;
 
-  // Build Gemini API messages from chat history
-  const historyForApi=chatHistory.slice(0,-1).slice(-10).map(m=>({role:m.role,parts:[{text:m.parts[0].text}]}));
+  // Build OpenAI messages from chat history (last 12 turns for context)
+  const historyForApi=chatHistory.slice(0,-1).slice(-12).map(m=>({
+    role: m.role==='model'?'assistant':m.role,
+    content: m.parts[0].text
+  }));
 
   try{
-    const resp=await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash-latest:generateContent?key=${geminiKey}`,{
+    const resp=await fetch('https://api.openai.com/v1/chat/completions',{
       method:'POST',
-      headers:{'Content-Type':'application/json'},
+      headers:{
+        'Content-Type':'application/json',
+        'Authorization':`Bearer ${openaiKey}`
+      },
       body:JSON.stringify({
-        system_instruction:{parts:[{text:systemCtx}]},
-        contents:[
+        model:'gpt-4o-mini',
+        messages:[
+          systemMsg,
           ...historyForApi,
-          {role:'user',parts:[{text:fullPrompt}]}
+          {role:'user',content:fullPrompt}
         ],
-        generationConfig:{
-          temperature:0.7,
-          maxOutputTokens:2048,
-          topP:0.95,
-          topK:40
-        },
-        safetySettings:[
-          {category:'HARM_CATEGORY_HARASSMENT',threshold:'BLOCK_NONE'},
-          {category:'HARM_CATEGORY_HATE_SPEECH',threshold:'BLOCK_NONE'},
-          {category:'HARM_CATEGORY_SEXUALLY_EXPLICIT',threshold:'BLOCK_NONE'},
-          {category:'HARM_CATEGORY_DANGEROUS_CONTENT',threshold:'BLOCK_NONE'}
-        ]
+        temperature:0.7,
+        max_tokens:2048,
+        top_p:0.95,
+        frequency_penalty:0.1,
+        presence_penalty:0.05
       })
     });
 
@@ -804,16 +807,19 @@ Instructions:
 
     if(data.error){
       const errMsg=data.error.message||'API error';
-      if(errMsg.includes('API_KEY_INVALID')||errMsg.includes('API key')){
-        chrome.storage.local.remove([KEY_APIKEY],()=>{geminiKey='';});
-        appendMessage('model','⚠️ Your API key is invalid or expired. Please go to AI Settings (⚙) to enter a new key.');
+      const isAuthErr=data.error.type==='invalid_request_error'||errMsg.includes('API key')||errMsg.includes('Incorrect API key')||resp.status===401;
+      if(isAuthErr){
+        chrome.storage.local.remove([KEY_APIKEY],()=>{openaiKey='';});
+        appendMessage('model','⚠️ Your OpenAI API key is invalid or expired. Tap **Settings (⚙)** to enter a new key.');
+      } else if(data.error.code==='insufficient_quota'){
+        appendMessage('model','⚠️ Your OpenAI account has run out of credits. Please top up at platform.openai.com/billing.');
       } else {
         appendMessage('model',`⚠️ API error: ${errMsg}`);
       }
       return;
     }
 
-    const aiText=data.candidates?.[0]?.content?.parts?.[0]?.text||'No response received.';
+    const aiText=data.choices?.[0]?.message?.content||'No response received.';
     appendMessage('model',aiText);
   }catch(err){
     removeThinking();aiSend.disabled=false;
