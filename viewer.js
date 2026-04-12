@@ -501,9 +501,8 @@ async function extractTextFromRegion(screenX,screenY,w,h){
 let aiOpen=false;
 let aiPanelWidth=380;
 const STORAGE_KEY='sc_ai_chat';
-const KEY_APIKEY='sc_openai_key';
 let chatHistory=[]; // {role:'user'|'assistant', parts:[{text}]}
-let openaiKey='';
+const FREE_AI_ENDPOINT='https://text.pollinations.ai/openai';
 let aiFullscreen=false;
 
 function openAiPanel(){
@@ -562,30 +561,9 @@ document.addEventListener('mousemove',e=>{
 });
 document.addEventListener('mouseup',()=>{resizerDragging=false;aiResizer.classList.remove('dragging');});
 
-// ── API Key management ────────────────────────────────────────────────────────
+// ── AI setup — no key needed, free via Pollinations ──────────────────────────
 function checkApiKey(){
-  chrome.storage.local.get([KEY_APIKEY],data=>{
-    openaiKey=data[KEY_APIKEY]||'';
-    if(!openaiKey){showSetupScreen();}else{showChatScreen();}
-  });
-}
-
-function showSetupScreen(){
-  aiMessages.innerHTML=`
-  <div class="ai-setup">
-    <div style="font-size:40px">🤖</div>
-    <h3>Connect Studyink AI</h3>
-    <p>Enter your <strong style="color:#a5b4fc">OpenAI API key</strong> to start asking AI about your PDFs with GPT-4o mini.</p>
-    <input type="password" class="ai-setup-input" id="key-input" placeholder="sk-…">
-    <button class="ai-setup-btn" id="key-save-btn">Connect AI →</button>
-    <a class="ai-setup-link" href="https://platform.openai.com/api-keys" target="_blank">Get your API key from OpenAI Platform ↗</a>
-    <p style="font-size:11px;color:#1e1e40;margin-top:4px">Stored locally in this extension only. Never sent anywhere else.</p>
-  </div>`;
-  $('key-save-btn').onclick=()=>{
-    const k=($('key-input').value||'').trim();
-    if(!k.startsWith('sk-')||k.length<30){toast('Please enter a valid OpenAI API key (starts with sk-)');return;}
-    chrome.storage.local.set({[KEY_APIKEY]:k},()=>{openaiKey=k;showChatScreen();toast('AI connected!');});
-  };
+  showChatScreen();
 }
 
 function showChatScreen(){
@@ -593,7 +571,10 @@ function showChatScreen(){
 }
 
 $('ai-settings-btn').onclick=()=>{
-  chrome.storage.local.remove([KEY_APIKEY],()=>{openaiKey='';chatHistory=[];showSetupScreen();});
+  chatHistory=[];
+  chrome.storage.local.remove([STORAGE_KEY]);
+  renderMessages();
+  toast('Chat cleared');
 };
 
 // ── Chat history ──────────────────────────────────────────────────────────────
@@ -737,9 +718,8 @@ function renderMarkdown(text){
   return out.join('\n');
 }
 
-// ── Send message to AI (OpenAI GPT-4o mini) ──────────────────────────────────
+// ── Send message to AI (free via Pollinations — no key needed) ───────────────
 async function sendToAI(userText){
-  if(!openaiKey){showSetupScreen();return;}
   const localCrop=cropDataUrl;const localCropText=cropText;
   cropDataUrl=null;cropText='';const pending=$('pending-crop');if(pending)pending.remove();
 
@@ -781,14 +761,11 @@ Response formatting rules:
   }));
 
   try{
-    const resp=await fetch('https://api.openai.com/v1/chat/completions',{
+    const resp=await fetch(FREE_AI_ENDPOINT,{
       method:'POST',
-      headers:{
-        'Content-Type':'application/json',
-        'Authorization':`Bearer ${openaiKey}`
-      },
+      headers:{'Content-Type':'application/json'},
       body:JSON.stringify({
-        model:'gpt-4o-mini',
+        model:'openai',
         messages:[
           systemMsg,
           ...historyForApi,
@@ -796,9 +773,7 @@ Response formatting rules:
         ],
         temperature:0.7,
         max_tokens:2048,
-        top_p:0.95,
-        frequency_penalty:0.1,
-        presence_penalty:0.05
+        seed:42
       })
     });
 
@@ -806,16 +781,7 @@ Response formatting rules:
     removeThinking();aiSend.disabled=false;
 
     if(data.error){
-      const errMsg=data.error.message||'API error';
-      const isAuthErr=data.error.type==='invalid_request_error'||errMsg.includes('API key')||errMsg.includes('Incorrect API key')||resp.status===401;
-      if(isAuthErr){
-        chrome.storage.local.remove([KEY_APIKEY],()=>{openaiKey='';});
-        appendMessage('model','⚠️ Your OpenAI API key is invalid or expired. Tap **Settings (⚙)** to enter a new key.');
-      } else if(data.error.code==='insufficient_quota'){
-        appendMessage('model','⚠️ Your OpenAI account has run out of credits. Please top up at platform.openai.com/billing.');
-      } else {
-        appendMessage('model',`⚠️ API error: ${errMsg}`);
-      }
+      appendMessage('model',`⚠️ AI error: ${data.error.message||'Something went wrong. Please try again.'}`);
       return;
     }
 
