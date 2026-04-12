@@ -788,6 +788,7 @@ async function sendToAI(userText){
 
 PDF Context (current page ${currentPage} of ${numPages}, file: "${fileName}"):
 ${pageContext?`"${pageContext}"`:' (text extraction unavailable for this page)'}
+${localCrop?'\nThe student has shared a screenshot of a selected region from the PDF — analyze it directly.':''}
 
 Response formatting rules:
 - Use markdown: **bold** key terms, ## section headers, bullet lists, numbered steps
@@ -795,7 +796,7 @@ Response formatting rules:
 - Use triple-backtick code blocks for code
 - Structure complex answers with clear headers and spacing
 - Be thorough but don't pad — quality over quantity
-- Always reference the PDF content when answering`
+- If an image is attached, describe and explain it in full detail`
   };
 
   appendMessage('user',userText,localCrop);
@@ -807,20 +808,24 @@ Response formatting rules:
     content: m.parts[0].text
   }));
 
+  // Build user message — use vision format when crop image is present
+  const userMsgContent=localCrop
+    ?[{type:'text',text:fullPrompt},{type:'image_url',image_url:{url:localCrop,detail:'high'}}]
+    :fullPrompt;
+
   try{
     const resp=await fetch(FREE_AI_ENDPOINT,{
       method:'POST',
       headers:{'Content-Type':'application/json'},
       body:JSON.stringify({
-        model:'openai',
+        model:'openai-large',
         messages:[
           systemMsg,
           ...historyForApi,
-          {role:'user',content:fullPrompt}
+          {role:'user',content:userMsgContent}
         ],
         temperature:0.7,
-        max_tokens:2048,
-        seed:42
+        max_tokens:2048
       })
     });
 
