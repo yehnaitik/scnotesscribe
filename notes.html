@@ -1,0 +1,187 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Shadowcore — Handwritten Notes</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+html,body{height:100%;font-family:'Segoe UI',system-ui,sans-serif;background:#080810;color:#e0e0f0}
+
+.topbar{height:54px;background:#0f0f1e;border-bottom:1px solid #1a1a30;display:flex;align-items:center;padding:0 18px;gap:12px;flex-shrink:0}
+.brand{display:flex;align-items:center;gap:9px}
+.brand-logo{width:30px;height:30px;border-radius:8px;overflow:hidden;display:flex;align-items:center;justify-content:center;background:linear-gradient(135deg,#2d1b69,#0d1b4a);box-shadow:0 0 10px rgba(99,102,241,.4)}
+.brand-logo img{width:100%;height:100%;object-fit:cover}
+.brand-text{display:flex;flex-direction:column;line-height:1.15}
+.brand-name{font-weight:800;font-size:13px;background:linear-gradient(135deg,#818cf8,#38bdf8);-webkit-background-clip:text;-webkit-text-fill-color:transparent}
+.brand-sub{font-size:9.5px;color:#4a5580;letter-spacing:.06em;text-transform:uppercase}
+.spacer{flex:1}
+.btn{height:34px;padding:0 14px;border:none;border-radius:8px;background:#141428;color:#a0a8cc;font-size:12px;font-weight:600;cursor:pointer;display:flex;align-items:center;gap:6px;transition:all .14s;border:1px solid #1e1e3a}
+.btn:hover{background:#1e1e3a;color:#e0e0f0}
+.btn.primary{background:linear-gradient(135deg,#4338ca,#6366f1);color:#fff;border:none}
+.btn.primary:hover{opacity:.9}
+
+.container{max-width:860px;margin:0 auto;padding:28px 18px}
+
+/* Input area */
+.input-section{background:#0f0f1e;border:1px solid #1e1e3a;border-radius:16px;padding:24px;margin-bottom:22px}
+.input-section h2{font-size:15px;font-weight:700;color:#a5b4fc;margin-bottom:6px}
+.input-section p{font-size:12.5px;color:#4a5580;margin-bottom:14px;line-height:1.6}
+.textarea-wrap{position:relative}
+.notes-textarea{width:100%;min-height:140px;background:#080810;border:1px solid #1e1e3a;border-radius:10px;color:#e0e0f0;font-size:13px;padding:12px;resize:vertical;outline:none;line-height:1.6;font-family:inherit;transition:border-color .14s}
+.notes-textarea:focus{border-color:#6366f1}
+.char-count{position:absolute;bottom:8px;right:10px;font-size:11px;color:#2a2a4a;pointer-events:none}
+.options-row{display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-top:12px}
+.option-select{height:34px;padding:0 10px;background:#141428;border:1px solid #1e1e3a;border-radius:8px;color:#a0a8cc;font-size:12px;outline:none;cursor:pointer}
+.option-select:focus{border-color:#6366f1}
+.detect-btn{height:34px;padding:0 14px;border:none;border-radius:8px;background:#1e1e3a;color:#a0a8cc;font-size:12px;cursor:pointer;display:flex;align-items:center;gap:5px;border:1px solid #2a2a4a}
+.detect-btn:hover{background:#252540;color:#e0e0f0}
+.gen-btn{height:36px;padding:0 20px;border:none;border-radius:9px;background:linear-gradient(135deg,#4338ca,#6366f1);color:#fff;font-size:13px;font-weight:700;cursor:pointer;display:flex;align-items:center;gap:6px;margin-left:auto;transition:opacity .14s}
+.gen-btn:hover{opacity:.9}
+.gen-btn:disabled{opacity:.4;cursor:not-allowed}
+
+/* Progress */
+.progress-section{background:#0f0f1e;border:1px solid #1e1e3a;border-radius:16px;padding:24px;margin-bottom:22px;text-align:center;display:none}
+.progress-section.show{display:block}
+.progress-section .spinner{width:30px;height:30px;border:3px solid #1e1e3a;border-top-color:#6366f1;border-radius:50%;animation:spin .7s linear infinite;margin:0 auto 14px}
+@keyframes spin{to{transform:rotate(360deg)}}
+.progress-title{font-size:15px;font-weight:700;margin-bottom:6px;color:#e0e0f0}
+.progress-desc{font-size:12.5px;color:#4a5580;margin-bottom:14px}
+.progress-bar{width:100%;height:6px;background:#141428;border-radius:3px;overflow:hidden}
+.progress-fill{height:100%;background:linear-gradient(90deg,#4338ca,#818cf8);border-radius:3px;transition:width .3s;width:0}
+
+/* Error */
+.error-section{background:#1a0a0a;border:1px solid #7f1d1d;border-radius:14px;padding:18px;margin-bottom:22px;display:none}
+.error-section.show{display:block}
+.error-section p{color:#fca5a5;font-size:13px;line-height:1.6}
+.retry-btn{margin-top:12px;padding:8px 18px;border:none;border-radius:8px;background:#7f1d1d;color:#fca5a5;font-size:12px;font-weight:600;cursor:pointer}
+.retry-btn:hover{background:#991b1b}
+
+/* Notes output */
+.notes-section{display:none}
+.notes-section.show{display:block}
+.notes-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;flex-wrap:gap}
+.notes-header h2{font-size:15px;font-weight:700;color:#a5b4fc}
+.nav-controls{display:flex;align-items:center;gap:8px}
+.nav-btn{height:32px;padding:0 12px;border:1px solid #1e1e3a;border-radius:7px;background:#141428;color:#a0a8cc;font-size:12px;cursor:pointer}
+.nav-btn:hover{background:#1e1e3a;color:#e0e0f0}
+.nav-btn:disabled{opacity:.3;cursor:not-allowed}
+.page-ind{font-size:12px;color:#4a5580}
+
+.page-viewer{background:#0f0f1e;border:1px solid #1e1e3a;border-radius:14px;overflow:hidden}
+.page-img-wrap{background:#fff;display:flex;justify-content:center;min-height:400px;align-items:center}
+.page-img-wrap img{max-width:100%;display:block}
+.page-img-wrap .img-loading{font-size:13px;color:#888;padding:60px}
+.page-footer{display:flex;justify-content:space-between;align-items:center;padding:10px 14px;background:#0a0a18;border-top:1px solid #1a1a30}
+.page-footer span{font-size:11px;color:#4a5580}
+.dl-btn{padding:6px 14px;border-radius:7px;border:none;background:linear-gradient(135deg,#4338ca,#6366f1);color:#fff;font-size:11px;font-weight:700;cursor:pointer}
+
+.thumbs-row{display:flex;gap:8px;margin-top:10px;overflow-x:auto;padding-bottom:6px}
+.thumbs-row::-webkit-scrollbar{height:4px}
+.thumbs-row::-webkit-scrollbar-thumb{background:#1e1e3a;border-radius:2px}
+.thumb-btn{flex-shrink:0;width:72px;height:96px;border-radius:7px;overflow:hidden;border:2px solid #1e1e3a;cursor:pointer;transition:all .14s;padding:0;background:#fff}
+.thumb-btn.active{border-color:#6366f1;box-shadow:0 0 10px rgba(99,102,241,.3)}
+.thumb-btn img{width:100%;height:100%;object-fit:cover}
+
+.style-row{display:flex;gap:8px;flex-wrap:wrap;margin-top:8px}
+.style-chip{padding:5px 12px;border-radius:20px;border:1px solid #1e1e3a;background:#141428;color:#a0a8cc;font-size:11.5px;cursor:pointer;transition:all .14s}
+.style-chip:hover{border-color:#6366f1;color:#a5b4fc}
+.style-chip.active{background:#312e81;border-color:#6366f1;color:#a5b4fc}
+
+.made-by{text-align:center;font-size:10px;color:#1e1e3a;margin-top:20px;padding-bottom:10px}
+</style>
+</head>
+<body>
+
+<div class="topbar">
+  <div class="brand">
+    <div class="brand-logo"><img src="icon.png" alt="logo" onerror="this.style.display='none'"></div>
+    <div class="brand-text">
+      <span class="brand-name">SHADOWCORE</span>
+      <span class="brand-sub">Studyink · Handwritten Notes</span>
+    </div>
+  </div>
+  <div class="spacer"></div>
+  <button class="btn primary" id="download-all" style="display:none">⬇ Download All</button>
+</div>
+
+<div class="container">
+
+  <!-- Input section -->
+  <div class="input-section" id="input-section">
+    <h2>Generate Handwritten Notes</h2>
+    <p>Paste your study notes, or use "Detect from Page" to auto-extract text from your current tab. AI converts them into realistic handwritten note images.</p>
+
+    <div class="textarea-wrap">
+      <textarea class="notes-textarea" id="notes-input" placeholder="Paste your notes here, or click 'Detect from Page' to auto-extract…"></textarea>
+      <span class="char-count" id="char-count">0 / 5000</span>
+    </div>
+
+    <div class="options-row">
+      <button class="detect-btn" id="detect-btn">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+        Detect from Page
+      </button>
+
+      <select class="option-select" id="style-select">
+        <option value="neat">Neat Handwriting</option>
+        <option value="casual">Casual Notes</option>
+        <option value="student">Student Notes</option>
+        <option value="cursive">Cursive Style</option>
+        <option value="technical">Technical Diagrams</option>
+      </select>
+
+      <select class="option-select" id="paper-select">
+        <option value="lined">Lined Paper</option>
+        <option value="plain">Plain White</option>
+        <option value="grid">Grid Paper</option>
+        <option value="yellow">Yellow Notepad</option>
+      </select>
+
+      <button class="gen-btn" id="gen-btn" disabled>
+        ✍️ Generate Notes
+      </button>
+    </div>
+  </div>
+
+  <!-- Progress -->
+  <div class="progress-section" id="progress-section">
+    <div class="spinner"></div>
+    <div class="progress-title" id="prog-title">Generating page 1…</div>
+    <div class="progress-desc" id="prog-desc">AI is writing your notes in handwriting. This takes ~15s per page.</div>
+    <div class="progress-bar"><div class="progress-fill" id="prog-fill"></div></div>
+  </div>
+
+  <!-- Error -->
+  <div class="error-section" id="error-section">
+    <p id="error-msg">Something went wrong.</p>
+    <button class="retry-btn" id="retry-btn">Retry</button>
+  </div>
+
+  <!-- Notes output -->
+  <div class="notes-section" id="notes-section">
+    <div class="notes-header">
+      <h2>Your Handwritten Notes</h2>
+      <div class="nav-controls">
+        <button class="nav-btn" id="prev-btn">← Prev</button>
+        <span class="page-ind" id="page-ind">1 / 1</span>
+        <button class="nav-btn" id="next-btn">Next →</button>
+      </div>
+    </div>
+    <div class="page-viewer">
+      <div class="page-img-wrap" id="img-wrap">
+        <div class="img-loading">Loading…</div>
+      </div>
+      <div class="page-footer">
+        <span id="page-lbl">Page 1</span>
+        <button class="dl-btn" id="dl-page">⬇ Download Page</button>
+      </div>
+    </div>
+    <div class="thumbs-row" id="thumbs"></div>
+  </div>
+
+  <div class="made-by">made by yeh.naitik · Shadowcore Studyink</div>
+</div>
+
+<script src="notes.js"></script>
+</body>
+</html>
