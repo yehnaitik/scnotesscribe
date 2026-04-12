@@ -284,9 +284,20 @@ $('close-info').onclick=()=>$('panel-info').classList.remove('open');
 let drawMode=null,drawColor='#ef4444',drawSize=3,drawOpacity=1,isEraser=false,brushType='pen';
 
 function syncDrawCanvas(){
-  drawCanvas.width=scrollArea.scrollWidth;drawCanvas.height=scrollArea.scrollHeight;
-  drawCanvas.style.width=scrollArea.scrollWidth+'px';drawCanvas.style.height=scrollArea.scrollHeight+'px';
-  drawCanvas.style.position='absolute';drawCanvas.style.top='0';drawCanvas.style.left='0';
+  // Position canvas exactly over scrollArea, relative to viewer-main (its parent)
+  const saRect=scrollArea.getBoundingClientRect();
+  const parentRect=drawCanvas.parentElement.getBoundingClientRect();
+  const offTop=saRect.top-parentRect.top;
+  const offLeft=saRect.left-parentRect.left;
+  drawCanvas.style.position='absolute';
+  drawCanvas.style.top=offTop+'px';
+  drawCanvas.style.left=offLeft+'px';
+  drawCanvas.style.width=scrollArea.scrollWidth+'px';
+  drawCanvas.style.height=scrollArea.scrollHeight+'px';
+  if(drawCanvas.width!==scrollArea.scrollWidth||drawCanvas.height!==scrollArea.scrollHeight){
+    drawCanvas.width=scrollArea.scrollWidth;
+    drawCanvas.height=scrollArea.scrollHeight;
+  }
 }
 
 function enableDraw(mode){
@@ -316,39 +327,79 @@ document.querySelectorAll('.brush-btn').forEach(b=>{b.onclick=()=>{document.quer
 
 function applyBrushStyle(){
   drawCtx.lineJoin='round';
-  switch(brushType){case'pen':drawCtx.lineCap='round';drawCtx.setLineDash([]);break;case'marker':drawCtx.lineCap='square';drawCtx.setLineDash([]);break;case'pencil':drawCtx.lineCap='round';drawCtx.setLineDash([2,1]);break;case'calligraphy':drawCtx.lineCap='butt';drawCtx.setLineDash([]);break;}
+  switch(brushType){
+    case'marker':drawCtx.lineCap='square';drawCtx.setLineDash([]);break;
+    case'pencil':drawCtx.lineCap='round';drawCtx.setLineDash([3,2]);break;
+    default:drawCtx.lineCap='round';drawCtx.setLineDash([]);
+  }
 }
 
-// Mouse drawing
-let isDrawingMouse=false;
-function getScrollOffset(){return{x:scrollArea.scrollLeft,y:scrollArea.scrollTop};}
+// Convert client coords → canvas-space coords (fixed: uses scrollArea as reference)
+function getCanvasPos(clientX,clientY){
+  const r=scrollArea.getBoundingClientRect();
+  return{x:clientX-r.left+scrollArea.scrollLeft, y:clientY-r.top+scrollArea.scrollTop};
+}
 
-drawCanvas.addEventListener('mousedown',e=>{
-  if(cropMode)return;if(!drawMode)return;isDrawingMouse=true;
-  const{x,y}=getScrollOffset();drawCtx.beginPath();drawCtx.moveTo(e.clientX-drawCanvas.getBoundingClientRect().left+x,e.clientY-drawCanvas.getBoundingClientRect().top+y);
-});
-drawCanvas.addEventListener('mousemove',e=>{
-  if(!isDrawingMouse||!drawMode||cropMode)return;
-  const rect=drawCanvas.getBoundingClientRect();const{x,y}=getScrollOffset();
-  const cx=e.clientX-rect.left+x;const cy=e.clientY-rect.top+y;
-  drawCtx.lineWidth=isEraser?drawSize*4:drawSize;applyBrushStyle();
+// ── Smooth drawing engine (quadratic Bézier midpoint technique) ───────────────
+let isPointerDrawing=false,lastDX=0,lastDY=0;
+
+function strokeBegin(clientX,clientY){
+  if(cropMode||!drawMode)return false;
+  const{x,y}=getCanvasPos(clientX,clientY);
+  lastDX=x;lastDY=y;
+  drawCtx.lineWidth=isEraser?drawSize*5:drawSize;
+  applyBrushStyle();
   if(isEraser){drawCtx.globalCompositeOperation='destination-out';drawCtx.strokeStyle='rgba(0,0,0,1)';drawCtx.globalAlpha=1;}
   else{drawCtx.globalCompositeOperation='source-over';drawCtx.strokeStyle=drawColor;drawCtx.globalAlpha=drawOpacity;}
-  drawCtx.lineTo(cx,cy);drawCtx.stroke();
-});
-['mouseup','mouseleave'].forEach(ev=>drawCanvas.addEventListener(ev,()=>{isDrawingMouse=false;drawCtx.globalAlpha=1;drawCtx.globalCompositeOperation='source-over';drawCtx.setLineDash([]);}));
+  drawCtx.beginPath();drawCtx.moveTo(x,y);
+  return true;
+}
 
-// Touch: 1 finger draw, 2 fingers scroll/zoom
+function strokeMove(clientX,clientY){
+  if(!isPointerDrawing||!drawMode||cropMode)return;
+  const{x,y}=getCanvasPos(clientX,clientY);
+  const midX=(lastDX+x)/2,midY=(lastDY+y)/2;
+  drawCtx.quadraticCurveTo(lastDX,lastDY,midX,midY);
+  drawCtx.stroke();
+  drawCtx.beginPath();drawCtx.moveTo(midX,midY);
+  lastDX=x;lastDY=y;
+}
+
+function strokeEnd(){
+  if(!isPointerDrawing)return;
+  isPointerDrawing=false;
+  // Draw final dot if user just clicked without moving
+  drawCtx.lineTo(lastDX+0.1,lastDY+0.1);drawCtx.stroke();
+  drawCtx.globalAlpha=1;drawCtx.globalCompositeOperation='source-over';drawCtx.setLineDash([]);
+}
+
+// Mouse
+drawCanvas.addEventListener('mousedown',e=>{if(e.button!==0)return;isPointerDrawing=strokeBegin(e.clientX,e.clientY);});
+drawCanvas.addEventListener('mousemove',e=>{strokeMove(e.clientX,e.clientY);});
+['mouseup','mouseleave'].forEach(ev=>drawCanvas.addEventListener(ev,strokeEnd));
+
+// Touch: 1 finger = draw, 2 fingers = scroll/pinch-zoom
 let touchDrawing=false,lastTouchDist=0;
 drawCanvas.addEventListener('touchstart',e=>{
-  if(e.touches.length===1&&drawMode&&!cropMode){e.preventDefault();touchDrawing=true;const rect=drawCanvas.getBoundingClientRect();const{x,y}=getScrollOffset();const t=e.touches[0];drawCtx.beginPath();drawCtx.moveTo(t.clientX-rect.left+x,t.clientY-rect.top+y);}
-  else if(e.touches.length===2){e.preventDefault();touchDrawing=false;lastTouchDist=Math.hypot(e.touches[0].clientX-e.touches[1].clientX,e.touches[0].clientY-e.touches[1].clientY);}
+  if(cropMode)return;
+  if(e.touches.length===1&&drawMode){
+    e.preventDefault();touchDrawing=true;isPointerDrawing=strokeBegin(e.touches[0].clientX,e.touches[0].clientY);
+  } else if(e.touches.length>=2){
+    e.preventDefault();touchDrawing=false;strokeEnd();
+    lastTouchDist=Math.hypot(e.touches[0].clientX-e.touches[1].clientX,e.touches[0].clientY-e.touches[1].clientY);
+  }
 },{passive:false});
 drawCanvas.addEventListener('touchmove',e=>{
-  if(e.touches.length===1&&touchDrawing&&drawMode&&!cropMode){e.preventDefault();const rect=drawCanvas.getBoundingClientRect();const{x,y}=getScrollOffset();const t=e.touches[0];const cx=t.clientX-rect.left+x;const cy=t.clientY-rect.top+y;drawCtx.lineWidth=isEraser?drawSize*4:drawSize;applyBrushStyle();if(isEraser){drawCtx.globalCompositeOperation='destination-out';drawCtx.strokeStyle='rgba(0,0,0,1)';drawCtx.globalAlpha=1;}else{drawCtx.globalCompositeOperation='source-over';drawCtx.strokeStyle=drawColor;drawCtx.globalAlpha=drawOpacity;}drawCtx.lineTo(cx,cy);drawCtx.stroke();}
-  else if(e.touches.length===2){e.preventDefault();const dist=Math.hypot(e.touches[0].clientX-e.touches[1].clientX,e.touches[0].clientY-e.touches[1].clientY);if(lastTouchDist>0){const delta=dist/lastTouchDist;if(Math.abs(delta-1)>0.01)applyZoom(scale*delta);}lastTouchDist=dist;}
+  if(e.touches.length===1&&touchDrawing&&drawMode&&!cropMode){
+    e.preventDefault();strokeMove(e.touches[0].clientX,e.touches[0].clientY);
+  } else if(e.touches.length>=2){
+    e.preventDefault();
+    const dist=Math.hypot(e.touches[0].clientX-e.touches[1].clientX,e.touches[0].clientY-e.touches[1].clientY);
+    if(lastTouchDist>0){const delta=dist/lastTouchDist;if(Math.abs(delta-1)>0.01)applyZoom(scale*delta);}
+    lastTouchDist=dist;
+  }
 },{passive:false});
-['touchend','touchcancel'].forEach(ev=>drawCanvas.addEventListener(ev,()=>{touchDrawing=false;drawCtx.globalAlpha=1;drawCtx.globalCompositeOperation='source-over';drawCtx.setLineDash([]);}));
+['touchend','touchcancel'].forEach(ev=>drawCanvas.addEventListener(ev,()=>{touchDrawing=false;strokeEnd();}));
 scrollArea.addEventListener('touchstart',e=>{if(e.touches.length===2)lastTouchDist=Math.hypot(e.touches[0].clientX-e.touches[1].clientX,e.touches[0].clientY-e.touches[1].clientY);},{passive:true});
 scrollArea.addEventListener('touchmove',e=>{if(e.touches.length===2){const dist=Math.hypot(e.touches[0].clientX-e.touches[1].clientX,e.touches[0].clientY-e.touches[1].clientY);if(lastTouchDist>0){const delta=dist/lastTouchDist;if(Math.abs(delta-1)>0.01)applyZoom(scale*delta);}lastTouchDist=dist;}},{passive:true});
 window.addEventListener('resize',()=>{if(drawMode)syncDrawCanvas();});
