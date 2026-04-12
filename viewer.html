@@ -24,6 +24,9 @@ html,body{height:100%;overflow:hidden;font-family:'Segoe UI',system-ui,sans-seri
 .btn svg{width:14px;height:14px;flex-shrink:0}
 .btn.icon-only{padding:0;width:32px;justify-content:center}
 .btn.danger:hover{background:#7f1d1d;color:#fca5a5}
+.btn.ai-btn{background:linear-gradient(135deg,#312e81,#1e1b4b);color:#a5b4fc;border:1px solid #4338ca}
+.btn.ai-btn:hover{background:linear-gradient(135deg,#4338ca,#312e81);color:#e0e8ff}
+.btn.ai-btn.active{background:linear-gradient(135deg,#4338ca,#6366f1);color:#fff;box-shadow:0 0 14px rgba(99,102,241,.4)}
 
 .page-nav{display:flex;align-items:center;gap:3px}
 .page-input{width:40px;height:28px;background:#141428;border:1px solid #1e1e3a;border-radius:5px;color:#e0e0f0;font-size:12px;text-align:center;outline:none}
@@ -35,7 +38,7 @@ html,body{height:100%;overflow:hidden;font-family:'Segoe UI',system-ui,sans-seri
 .zoom-label:hover{background:#141428}
 
 /* ── Layout ── */
-.layout{display:flex;height:calc(100% - 52px);position:relative}
+.layout{display:flex;height:calc(100% - 52px);position:relative;overflow:hidden}
 
 /* ── Sidebar ── */
 .sidebar{width:130px;flex-shrink:0;background:#0a0a18;border-right:1px solid #1a1a30;overflow-y:auto;display:flex;flex-direction:column;gap:0;padding:8px 6px;transition:width .2s,padding .2s}
@@ -64,9 +67,14 @@ html,body{height:100%;overflow:hidden;font-family:'Segoe UI',system-ui,sans-seri
 
 @keyframes shimmer{0%{background-position:-200% 0}100%{background-position:200% 0}}
 
-/* ── Draw overlay ── */
+/* ── Draw / Crop overlay ── */
 .draw-overlay{position:absolute;top:0;left:0;pointer-events:none;display:none;z-index:5}
 .draw-overlay.active{display:block;pointer-events:all}
+.draw-overlay.crop-mode{cursor:crosshair}
+
+/* ── Crop selection rect ── */
+.crop-rect{position:fixed;border:2px dashed #6366f1;background:rgba(99,102,241,.08);pointer-events:none;z-index:9999;border-radius:2px;display:none}
+.crop-rect.show{display:block}
 
 /* ── Status overlay ── */
 .status-overlay{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;z-index:30;background:rgba(8,8,16,.7);backdrop-filter:blur(4px)}
@@ -80,13 +88,12 @@ html,body{height:100%;overflow:hidden;font-family:'Segoe UI',system-ui,sans-seri
 .spinner{width:30px;height:30px;border:3px solid #1e1e3a;border-top-color:#6366f1;border-radius:50%;animation:spin .7s linear infinite;margin:0 auto 16px}
 @keyframes spin{to{transform:rotate(360deg)}}
 
-/* ── Side panels ── */
+/* ── Draw side panel ── */
 .side-panel{position:absolute;top:0;right:0;width:260px;height:100%;background:#0f0f22;border-left:1px solid #1a1a30;z-index:20;display:none;flex-direction:column}
 .side-panel.open{display:flex}
 .panel-header{padding:12px 14px;border-bottom:1px solid #1a1a30;display:flex;justify-content:space-between;align-items:center}
 .panel-header h3{font-size:13px;font-weight:700;color:#a5b4fc}
 .panel-body{padding:14px;overflow-y:auto;flex:1;display:flex;flex-direction:column;gap:14px}
-.panel-section{}
 .panel-section label{font-size:10.5px;color:#4a5580;text-transform:uppercase;letter-spacing:.6px;display:block;margin-bottom:6px;font-weight:600}
 .panel-section input[type="range"]{width:100%;accent-color:#6366f1;cursor:pointer;height:4px}
 .color-row{display:flex;gap:5px;flex-wrap:wrap;margin-top:4px}
@@ -99,14 +106,135 @@ html,body{height:100%;overflow:hidden;font-family:'Segoe UI',system-ui,sans-seri
 .info-row{margin-bottom:8px}
 .info-row .lbl{font-size:10px;color:#4a5580;text-transform:uppercase;letter-spacing:.5px;font-weight:600}
 .info-row .val{font-size:12px;margin-top:3px;word-break:break-all;color:#a0a8cc}
-.made-by{position:fixed;bottom:6px;right:8px;font-size:10px;color:#2a2a4a;font-weight:500;z-index:999;letter-spacing:.03em;pointer-events:none}
 
-/* ── Progress ── */
+/* ── Progress bar ── */
 .load-progress{height:2px;background:#6366f1;width:0;transition:width .25s;position:absolute;top:0;left:0;z-index:50;border-radius:0 2px 2px 0;box-shadow:0 0 6px #6366f1}
 
 /* ── Toast ── */
-.toast{position:fixed;bottom:20px;left:50%;transform:translateX(-50%) translateY(8px);background:#312e81;color:#e0e0f0;padding:9px 18px;border-radius:9px;font-size:12.5px;font-weight:500;z-index:999;opacity:0;transition:opacity .22s,transform .22s;pointer-events:none;border:1px solid #4338ca}
+.toast{position:fixed;bottom:20px;left:50%;transform:translateX(-50%) translateY(8px);background:#312e81;color:#e0e0f0;padding:9px 18px;border-radius:9px;font-size:12.5px;font-weight:500;z-index:9999;opacity:0;transition:opacity .22s,transform .22s;pointer-events:none;border:1px solid #4338ca}
 .toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
+.made-by{position:fixed;bottom:6px;right:8px;font-size:10px;color:#1e1e40;font-weight:500;z-index:50;letter-spacing:.03em;pointer-events:none}
+
+/* ═══════════════════════════════════════════════════════
+   AI CHAT PANEL
+═══════════════════════════════════════════════════════ */
+.ai-resizer{width:5px;background:#0a0a18;cursor:col-resize;flex-shrink:0;position:relative;transition:background .15s;z-index:15}
+.ai-resizer:hover,.ai-resizer.dragging{background:#4338ca}
+.ai-resizer::after{content:'';position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);width:1px;height:40px;background:#2a2a50;border-radius:1px}
+
+.ai-panel{width:0;flex-shrink:0;background:#0a0a14;border-left:1px solid #1a1a30;display:flex;flex-direction:column;overflow:hidden;transition:none;position:relative}
+.ai-panel.open{min-width:300px}
+
+/* AI Panel header */
+.ai-header{height:46px;background:#0f0f1e;border-bottom:1px solid #1a1a30;display:flex;align-items:center;padding:0 10px;gap:8px;flex-shrink:0}
+.ai-header-left{display:flex;align-items:center;gap:7px;flex:1;min-width:0}
+.ai-brain-icon{width:26px;height:26px;border-radius:7px;background:linear-gradient(135deg,#4338ca,#6366f1);display:flex;align-items:center;justify-content:center;flex-shrink:0;box-shadow:0 0 10px rgba(99,102,241,.3)}
+.ai-brain-icon svg{width:14px;height:14px;color:#fff}
+.ai-title{font-weight:700;font-size:13px;color:#a5b4fc;white-space:nowrap}
+.ai-model-tag{font-size:10px;color:#3a3a60;background:#141428;padding:2px 7px;border-radius:10px;border:1px solid #1e1e3a;flex-shrink:0}
+
+/* AI Panel width slider */
+.ai-slider-row{height:32px;background:#080810;border-bottom:1px solid #1a1a30;display:flex;align-items:center;padding:0 10px;gap:8px;flex-shrink:0}
+.ai-slider-label{font-size:10px;color:#3a3a60;white-space:nowrap}
+.ai-width-slider{flex:1;height:3px;accent-color:#6366f1;cursor:pointer}
+.ai-action-btns{display:flex;gap:4px}
+.ai-hdr-btn{height:26px;padding:0 8px;border:none;border-radius:5px;background:#141428;color:#6b7db5;font-size:11px;cursor:pointer;display:flex;align-items:center;gap:4px;transition:all .12s;border:1px solid #1e1e3a}
+.ai-hdr-btn:hover{background:#1e1e3a;color:#e0e0f0}
+.ai-hdr-btn svg{width:12px;height:12px}
+
+/* Chat messages area */
+.ai-messages{flex:1;overflow-y:auto;padding:14px;display:flex;flex-direction:column;gap:16px;scroll-behavior:smooth}
+.ai-messages::-webkit-scrollbar{width:4px}
+.ai-messages::-webkit-scrollbar-thumb{background:#1e1e3a;border-radius:2px}
+
+/* Empty state */
+.ai-empty{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;padding:24px;text-align:center;color:#2a2a50}
+.ai-empty-icon{font-size:36px;opacity:.5}
+.ai-empty h3{font-size:14px;font-weight:700;color:#3a3a60}
+.ai-empty p{font-size:12px;line-height:1.6;color:#252545}
+.ai-empty .hint{display:flex;align-items:center;gap:7px;margin-top:8px;padding:9px 14px;background:#0f0f1e;border-radius:10px;border:1px solid #1a1a30;font-size:12px;color:#3a4a70}
+
+/* Message bubbles */
+.msg{display:flex;flex-direction:column;gap:4px;animation:fadeSlide .2s ease}
+@keyframes fadeSlide{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:translateY(0)}}
+.msg.user{align-items:flex-end}
+.msg.ai{align-items:flex-start}
+.msg-meta{display:flex;align-items:center;gap:6px;font-size:10px;color:#2a2a50}
+.msg-avatar{width:20px;height:20px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:9px;font-weight:700;flex-shrink:0}
+.msg.user .msg-avatar{background:linear-gradient(135deg,#4338ca,#6366f1);color:#fff}
+.msg.ai  .msg-avatar{background:linear-gradient(135deg,#0f2a4a,#1e4080);color:#60a5fa}
+
+/* Crop thumbnail in user message */
+.msg-crop{max-width:220px;border-radius:8px;overflow:hidden;margin-bottom:4px;border:1px solid #1e1e3a}
+.msg-crop img{display:block;width:100%;max-height:140px;object-fit:cover}
+
+.msg-bubble{max-width:100%;padding:11px 14px;border-radius:14px;font-size:13px;line-height:1.7;word-break:break-word}
+.msg.user .msg-bubble{background:linear-gradient(135deg,#312e81,#1e1b4b);color:#c7d2fe;border-radius:14px 14px 4px 14px;border:1px solid #4338ca}
+.msg.ai  .msg-bubble{background:#0f0f22;color:#d4d8f0;border-radius:4px 14px 14px 14px;border:1px solid #1a1a30}
+
+/* Markdown rendering inside AI bubble */
+.msg-bubble h1,.msg-bubble h2,.msg-bubble h3{color:#a5b4fc;font-weight:700;margin:14px 0 6px}
+.msg-bubble h1{font-size:16px}
+.msg-bubble h2{font-size:14.5px}
+.msg-bubble h3{font-size:13.5px}
+.msg-bubble p{margin:0 0 10px;line-height:1.75}
+.msg-bubble p:last-child{margin-bottom:0}
+.msg-bubble ul,.msg-bubble ol{padding-left:18px;margin:8px 0}
+.msg-bubble li{margin-bottom:5px;line-height:1.65}
+.msg-bubble strong{color:#c7d2fe;font-weight:700}
+.msg-bubble em{color:#a5b4fc;font-style:italic}
+.msg-bubble code{background:#141430;color:#a5f3fc;padding:2px 7px;border-radius:5px;font-family:'JetBrains Mono','Fira Code',monospace;font-size:12px;border:1px solid #1e2a4a}
+.msg-bubble pre{background:#0a0a1e;border:1px solid #1e1e3a;border-radius:10px;padding:14px;margin:10px 0;overflow-x:auto}
+.msg-bubble pre code{background:none;border:none;padding:0;color:#7dd3fc;font-size:12px}
+.msg-bubble blockquote{border-left:3px solid #4338ca;padding-left:12px;margin:10px 0;color:#6b7db5;font-style:italic}
+.msg-bubble hr{border:none;border-top:1px solid #1e1e3a;margin:14px 0}
+.msg-bubble a{color:#818cf8;text-decoration:underline}
+.msg-bubble table{border-collapse:collapse;width:100%;margin:10px 0;font-size:12px}
+.msg-bubble th,.msg-bubble td{border:1px solid #1e1e3a;padding:6px 10px;text-align:left}
+.msg-bubble th{background:#141428;color:#a5b4fc;font-weight:700}
+
+/* KaTeX math styles */
+.math-inline{display:inline-block;background:#141428;border:1px solid #1e2a4a;border-radius:4px;padding:1px 6px;font-family:'JetBrains Mono','Courier New',monospace;font-size:12.5px;color:#86efac;margin:0 2px;vertical-align:middle}
+.math-block{display:block;background:#0a0a1e;border:1px solid #1e2a4a;border-radius:10px;padding:12px 16px;font-family:'JetBrains Mono','Courier New',monospace;font-size:13px;color:#86efac;margin:12px 0;text-align:center;overflow-x:auto;white-space:pre}
+
+/* Thinking indicator */
+.ai-thinking{display:flex;align-items:center;gap:8px;padding:12px 14px;border-radius:4px 14px 14px 14px;background:#0f0f22;border:1px solid #1a1a30;font-size:12.5px;color:#4a5580}
+.dots{display:flex;gap:4px}
+.dots span{width:6px;height:6px;border-radius:50%;background:#4338ca;animation:dot-bounce .9s infinite}
+.dots span:nth-child(2){animation-delay:.15s;background:#6366f1}
+.dots span:nth-child(3){animation-delay:.3s;background:#818cf8}
+@keyframes dot-bounce{0%,80%,100%{transform:scale(0.8);opacity:.5}40%{transform:scale(1.2);opacity:1}}
+
+/* AI Input area */
+.ai-input-wrap{border-top:1px solid #1a1a30;padding:10px;background:#080810;flex-shrink:0}
+.ai-input-row{display:flex;gap:6px;align-items:flex-end}
+.ai-input-box{flex:1;min-height:38px;max-height:120px;background:#0f0f22;border:1px solid #1e1e3a;border-radius:10px;color:#e0e0f0;font-size:13px;padding:10px 12px;resize:none;outline:none;font-family:inherit;line-height:1.5;overflow-y:auto;transition:border-color .15s}
+.ai-input-box:focus{border-color:#4338ca}
+.ai-input-box::placeholder{color:#2a2a50}
+.ai-send-btn{width:38px;height:38px;border-radius:10px;border:none;background:linear-gradient(135deg,#4338ca,#6366f1);color:#fff;cursor:pointer;display:flex;align-items:center;justify-content:center;flex-shrink:0;transition:opacity .14s;box-shadow:0 2px 8px rgba(99,102,241,.3)}
+.ai-send-btn:hover{opacity:.9}
+.ai-send-btn:disabled{opacity:.3;cursor:not-allowed}
+.ai-send-btn svg{width:16px;height:16px}
+.ai-input-actions{display:flex;gap:5px;align-items:center;margin-bottom:4px}
+.ai-action-chip{padding:4px 10px;border-radius:20px;border:1px solid #1e1e3a;background:#0f0f1e;color:#4a5580;font-size:11px;cursor:pointer;transition:all .12s;display:flex;align-items:center;gap:4px}
+.ai-action-chip:hover{border-color:#4338ca;color:#a5b4fc}
+.ai-action-chip.active{background:#1a1a40;border-color:#6366f1;color:#a5b4fc}
+.ai-char-count{font-size:10px;color:#2a2a50;margin-left:auto}
+
+/* API Key setup screen */
+.ai-setup{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:24px;gap:14px;text-align:center}
+.ai-setup h3{font-size:15px;font-weight:700;color:#a5b4fc}
+.ai-setup p{font-size:12px;color:#4a5580;line-height:1.7;max-width:260px}
+.ai-setup-input{width:100%;background:#0f0f1e;border:1px solid #1e1e3a;border-radius:9px;color:#e0e0f0;font-size:12.5px;padding:11px 13px;outline:none;font-family:inherit;transition:border-color .15s}
+.ai-setup-input:focus{border-color:#6366f1}
+.ai-setup-btn{width:100%;height:38px;border-radius:9px;border:none;background:linear-gradient(135deg,#4338ca,#6366f1);color:#fff;font-size:13px;font-weight:700;cursor:pointer;transition:opacity .14s}
+.ai-setup-btn:hover{opacity:.9}
+.ai-setup-link{font-size:11px;color:#4338ca;text-decoration:underline;cursor:pointer}
+
+/* Crop instructions banner */
+.crop-banner{position:fixed;top:62px;left:50%;transform:translateX(-50%);background:linear-gradient(135deg,#312e81,#1e1b4b);border:1px solid #4338ca;border-radius:12px;padding:9px 18px;font-size:12.5px;font-weight:600;color:#c7d2fe;z-index:9998;display:none;align-items:center;gap:8px;box-shadow:0 6px 24px rgba(0,0,0,.5)}
+.crop-banner.show{display:flex}
+.crop-banner svg{width:15px;height:15px;color:#818cf8;flex-shrink:0}
 </style>
 </head>
 <body>
@@ -152,7 +280,6 @@ html,body{height:100%;overflow:hidden;font-family:'Segoe UI',system-ui,sans-seri
 
   <div class="sep"></div>
 
-  <!-- Brush tools -->
   <button class="btn" id="btn-draw" title="Pen">
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 013 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>
     Pen
@@ -167,6 +294,14 @@ html,body{height:100%;overflow:hidden;font-family:'Segoe UI',system-ui,sans-seri
   </button>
   <button class="btn danger" id="btn-clear" title="Clear">
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 01-2 2H8a2 2 0 01-2-2L5 6"/><path d="M9 6V4h6v2"/></svg>
+  </button>
+
+  <div class="sep"></div>
+
+  <!-- ★ Ask AI button -->
+  <button class="btn ai-btn" id="btn-ask-ai" title="Ask AI about any part of the PDF">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2a10 10 0 110 20 10 10 0 010-20z"/><path d="M9.09 9a3 3 0 015.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+    Ask AI
   </button>
 
   <div class="sep"></div>
@@ -186,6 +321,14 @@ html,body{height:100%;overflow:hidden;font-family:'Segoe UI',system-ui,sans-seri
   </button>
 </div>
 
+<!-- Crop selection box (follows mouse) -->
+<div class="crop-rect" id="crop-rect"></div>
+<!-- Crop instruction banner -->
+<div class="crop-banner" id="crop-banner">
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 3H3v2M21 3h-2M3 21h2M19 21h2M5 21v2M21 5v2M3 5v2M21 19v2"/><rect x="7" y="7" width="10" height="10" rx="1"/></svg>
+  Drag to select the area you want to ask AI about. Press Esc to cancel.
+</div>
+
 <div class="layout">
   <div class="sidebar" id="sidebar"></div>
 
@@ -203,6 +346,66 @@ html,body{height:100%;overflow:hidden;font-family:'Segoe UI',system-ui,sans-seri
           <button class="btn" id="btn-open-original">Open Original</button>
           <button class="btn" id="btn-retry">Retry</button>
         </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- AI panel resizer -->
+  <div class="ai-resizer" id="ai-resizer"></div>
+
+  <!-- ══════════════ AI CHAT PANEL ══════════════ -->
+  <div class="ai-panel" id="ai-panel">
+    <div class="ai-header">
+      <div class="ai-header-left">
+        <div class="ai-brain-icon">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9.5 2A2.5 2.5 0 017 4.5v1A2.5 2.5 0 009.5 8h5A2.5 2.5 0 0017 5.5v-1A2.5 2.5 0 0014.5 2h-5z"/><path d="M7 10.5A2.5 2.5 0 014.5 8H4a2 2 0 00-2 2v10a2 2 0 002 2h16a2 2 0 002-2V10a2 2 0 00-2-2h-.5A2.5 2.5 0 0117 10.5"/><path d="M12 12v6M9 15h6"/></svg>
+        </div>
+        <span class="ai-title">Studyink AI</span>
+        <span class="ai-model-tag" id="ai-model-tag">Gemini Flash</span>
+      </div>
+      <button class="ai-hdr-btn" id="ai-clear-chat" title="Clear chat history">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 01-2 2H8a2 2 0 01-2-2L5 6"/></svg>
+      </button>
+      <button class="ai-hdr-btn" id="ai-settings-btn" title="AI Settings">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83-2.83l.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 012.83-2.83l.06.06A1.65 1.65 0 009 4.68a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"/></svg>
+      </button>
+      <button class="ai-hdr-btn" id="ai-close" title="Close AI">✕</button>
+    </div>
+
+    <!-- Width slider -->
+    <div class="ai-slider-row">
+      <span class="ai-slider-label">Width</span>
+      <input type="range" class="ai-width-slider" id="ai-width-slider" min="280" max="900" value="380" step="10">
+      <div class="ai-action-btns">
+        <button class="ai-hdr-btn" id="ai-fullscreen-btn" title="Fill screen">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="15 3 21 3 21 9"/><polyline points="9 21 3 21 3 15"/><line x1="21" y1="3" x2="14" y2="10"/><line x1="3" y1="21" x2="10" y2="14"/></svg>
+        </button>
+      </div>
+    </div>
+
+    <!-- Messages or setup screen -->
+    <div class="ai-messages" id="ai-messages">
+      <!-- populated by JS -->
+    </div>
+
+    <!-- Input row -->
+    <div class="ai-input-wrap" id="ai-input-wrap">
+      <div class="ai-input-actions">
+        <button class="ai-action-chip" id="btn-crop-ai">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><line x1="9" y1="3" x2="9" y2="21"/><line x1="15" y1="3" x2="15" y2="21"/><line x1="3" y1="9" x2="21" y2="9"/><line x1="3" y1="15" x2="21" y2="15"/></svg>
+          Crop & Ask
+        </button>
+        <button class="ai-action-chip" id="btn-page-ai">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+          This Page
+        </button>
+        <span class="ai-char-count" id="ai-char-count"></span>
+      </div>
+      <div class="ai-input-row">
+        <textarea class="ai-input-box" id="ai-input" placeholder="Ask anything about this PDF…" rows="1"></textarea>
+        <button class="ai-send-btn" id="ai-send">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
+        </button>
       </div>
     </div>
   </div>
