@@ -525,6 +525,7 @@ $('btn-ask-ai').onclick=()=>{
   if(aiOpen){closeAiPanel();}else{openAiPanel();}
 };
 $('ai-close').onclick=closeAiPanel;
+$('btn-notes').onclick=()=>{ chrome.tabs.create({url:chrome.runtime.getURL('notes.html')}); };
 
 // Width slider
 $('ai-width-slider').oninput=e=>{
@@ -562,13 +563,8 @@ document.addEventListener('mousemove',e=>{
 document.addEventListener('mouseup',()=>{resizerDragging=false;aiResizer.classList.remove('dragging');});
 
 // ── AI setup — no key needed, free via Pollinations ──────────────────────────
-function checkApiKey(){
-  showChatScreen();
-}
-
-function showChatScreen(){
-  renderMessages();
-}
+function checkApiKey(){ showChatScreen(); }
+function showChatScreen(){ renderMessages(); }
 
 $('ai-settings-btn').onclick=()=>{
   chatHistory=[];
@@ -819,18 +815,8 @@ $('btn-crop-ai').onclick=()=>{
   enterCropMode();
 };
 
-// Ask AI button (toolbar) - also enters crop mode
-$('btn-ask-ai').onclick=()=>{
-  if(aiOpen&&!cropMode){
-    // Already open - enter crop mode
-    enterCropMode();
-  } else if(cropMode){
-    cancelCrop();if(!aiOpen)closeAiPanel();
-  } else {
-    openAiPanel();
-    enterCropMode();
-  }
-};
+// Ask AI button (toolbar) — toggles the panel open/close
+// (Use the Crop & Ask chip to draw a selection)
 
 // This Page chip - extract full page text
 $('btn-page-ai').onclick=async()=>{
