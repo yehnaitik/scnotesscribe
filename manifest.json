@@ -1,0 +1,43 @@
+{
+  "manifest_version": 3,
+  "name": "Shadowcore Studyink",
+  "version": "2.0.0",
+  "description": "Detect PDFs & files on any website. Open them in a blazing-fast canvas-based viewer with virtual rendering — no Google Viewer, no lag. Generate AI handwritten notes. By yeh.naitik.",
+  "permissions": ["activeTab", "scripting", "tabs", "storage"],
+  "host_permissions": ["<all_urls>"],
+  "action": {
+    "default_popup": "popup.html",
+    "default_icon": {
+      "48": "icon.png",
+      "128": "icon.png"
+    }
+  },
+  "icons": {
+    "48": "icon.png",
+    "128": "icon.png"
+  },
+  "background": {
+    "service_worker": "background.js"
+  },
+  "content_scripts": [
+    {
+      "matches": ["<all_urls>"],
+      "js": ["content.js"],
+      "run_at": "document_idle"
+    }
+  ],
+  "web_accessible_resources": [
+    {
+      "resources": [
+        "viewer.html",
+        "viewer.js",
+        "notes.html",
+        "notes.js",
+        "icon.png",
+        "pdf.min.mjs",
+        "pdf.worker.min.mjs"
+      ],
+      "matches": ["<all_urls>"]
+    }
+  ]
+}
