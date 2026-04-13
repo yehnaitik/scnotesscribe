@@ -910,20 +910,41 @@ function renderMarkdown(text){
   return result;
 }
 
-// ── HuggingFace free vision: describe a cropped image ────────────────────────
-async function describeImageFree(dataUrl){
+// ── HuggingFace free vision: parallel OCR + captioning ───────────────────────
+async function hfModel(model,imageBytes){
   try{
-    const base64=dataUrl.split(',')[1];
-    const binary=atob(base64);const arr=new Uint8Array(binary.length);
-    for(let i=0;i<binary.length;i++)arr[i]=binary.charCodeAt(i);
-    const resp=await fetch('https://api-inference.huggingface.co/models/Salesforce/blip-image-captioning-large',{
-      method:'POST',headers:{'Content-Type':'application/octet-stream'},body:arr.buffer
+    const r=await fetch(`https://api-inference.huggingface.co/models/${model}`,{
+      method:'POST',headers:{'Content-Type':'application/octet-stream'},body:imageBytes,
+      signal:AbortSignal.timeout(18000)
     });
-    if(!resp.ok)return null;
-    const result=await resp.json();
-    if(Array.isArray(result)&&result[0]?.generated_text)return result[0].generated_text;
+    if(!r.ok)return null;
+    const d=await r.json();
+    // Nougat returns {generated_text:...}, TrOCR returns [{generated_text:...}], BLIP returns [{generated_text:...}]
+    if(typeof d?.generated_text==='string')return d.generated_text.trim();
+    if(Array.isArray(d)&&d[0]?.generated_text)return d[0].generated_text.trim();
     return null;
   }catch{return null;}
+}
+
+async function analyzeImageFree(dataUrl){
+  const base64=dataUrl.split(',')[1];
+  const binary=atob(base64);
+  const arr=new Uint8Array(binary.length);
+  for(let i=0;i<binary.length;i++)arr[i]=binary.charCodeAt(i);
+  const bytes=arr.buffer;
+
+  // Run all three in parallel: Nougat (math/academic OCR), TrOCR (printed text), BLIP (visual)
+  const [nougat,trocr,blip]=await Promise.all([
+    hfModel('facebook/nougat-base',bytes),
+    hfModel('microsoft/trocr-large-printed',bytes),
+    hfModel('Salesforce/blip-image-captioning-large',bytes)
+  ]);
+
+  const parts=[];
+  if(nougat) parts.push(`Math/text OCR: "${nougat}"`);
+  else if(trocr) parts.push(`OCR text: "${trocr}"`);
+  if(blip&&!nougat) parts.push(`Visual: "${blip}"`);
+  return parts.length?parts.join('\n'):null;
 }
 
 // ── Send message to AI (free via Pollinations — no key needed) ───────────────
@@ -940,21 +961,23 @@ async function sendToAI(userText){
     page.cleanup();
   }catch{}
 
-  // If crop but no text (image-based PDF), try HuggingFace vision
-  let imageDesc='';
+  // If crop present and image-only page → run multi-model vision pipeline
+  let imageAnalysis='';
   if(localCrop&&!localCropText.trim()){
-    toast('Analyzing image…');
-    imageDesc=await describeImageFree(localCrop)||'';
+    toast('Reading image content… (may take ~15s)');
+    imageAnalysis=await analyzeImageFree(localCrop)||'';
   }
 
   let fullPrompt=userText;
   if(localCropText){
     fullPrompt=`Selected region text:\n"${localCropText}"\n\nQuestion: ${userText}`;
-  } else if(imageDesc){
-    fullPrompt=`The selected region appears to show: "${imageDesc}"\n\nQuestion: ${userText}`;
+  } else if(imageAnalysis){
+    fullPrompt=`The selected region is an image. Here is what was extracted from it:\n${imageAnalysis}\n\nBased on this, answer: ${userText}`;
+  } else if(localCrop){
+    fullPrompt=`The selected region is an image-only slide (no text could be extracted). The user asks: ${userText}\nPlease help as best you can using any context from the page.`;
   }
 
-  // Build conversation summary for memory (last 8 turns)
+  // Build conversation summary for memory (last 16 turns)
   const prevHistory=chatHistory.slice(-16);
   const conversationLines=prevHistory.map(m=>`${m.role==='user'?'Student':'AI'}: ${(m.parts[0]?.text||'').substring(0,300)}`).join('\n');
   const hasHistory=prevHistory.length>0;
@@ -964,17 +987,17 @@ async function sendToAI(userText){
     content:`You are Studyink AI, a brilliant academic tutor embedded in Shadowcore Studyink PDF viewer.
 
 PDF: "${fileName}" — Page ${currentPage} of ${numPages}
-Page content: ${pageContext?`"${pageContext}"`:' (image-only page — no extractable text)'}
-${localCropText||imageDesc?`\nSelected region: ${localCropText||imageDesc}`:''}
+Page text: ${pageContext?`"${pageContext}"`:' (image-only page — no selectable text)'}
+${localCropText||imageAnalysis?`\nExtracted from selected region:\n${localCropText||imageAnalysis}`:''}
 ${hasHistory?`\nConversation so far:\n${conversationLines}\n`:''}
 
 Rules:
-- Remember everything said above in this conversation and refer back to it naturally
+- Remember everything in this conversation and refer back naturally
 - Use markdown: **bold**, ## headers, bullet lists, numbered steps
-- Wrap ALL math in $...$ inline or $$...$$ block
+- Wrap ALL math in $...$ inline or $$...$$ block (e.g. $x^2$ or $$\\sum_{i=1}^n i$$)
 - Use code blocks for code
-- Be thorough, clear, and reference the PDF content
-- If the page is image-only (no text), still help using any context given`
+- Be thorough, solve step by step, show full working
+- When given OCR text with equations, parse and solve them carefully`
   };
 
   appendMessage('user',userText,localCrop);
