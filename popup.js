@@ -117,3 +117,18 @@ notesBtn.addEventListener('click', () => {
 
 rescanBtn.addEventListener('click', scan);
 scan();
+
+// ── Update check ─────────────────────────────────────────────────────────────
+chrome.runtime.sendMessage({ action: 'getUpdateStatus' }, res => {
+  if (res?.updateAvailable) {
+    const banner = document.getElementById('update-banner');
+    const msg = document.getElementById('update-msg');
+    if (banner) banner.classList.add('visible');
+    if (msg) {
+      chrome.storage.local.get(['sc_update_msg'], r => {
+        const m = r.sc_update_msg || '';
+        msg.textContent = m.length > 60 ? m.substring(0, 60) + '…' : m;
+      });
+    }
+  }
+});
