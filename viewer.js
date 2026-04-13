@@ -977,16 +977,25 @@ async function sendToAI(userText){
     page.cleanup();
   }catch{}
 
-  // Resize crop for vision API (keeps payload small, faster response)
+  // Resize crop for vision API + run OCR in parallel as backup context
   let visionCrop=localCrop;
-  if(localCrop&&!localCropText) visionCrop=await resizeForVision(localCrop,1024);
+  let ocrText='';
+  if(localCrop&&!localCropText){
+    toast('Analyzing image…');
+    [visionCrop,ocrText]=await Promise.all([
+      resizeForVision(localCrop,1024),
+      analyzeImageFree(localCrop).then(r=>r||'')
+    ]);
+  }
 
-  // Build prompt text
+  // Build prompt text — include OCR if available (extra context even if vision works)
   let fullPrompt=userText;
   if(localCropText){
     fullPrompt=`Selected region text:\n"${localCropText}"\n\nQuestion: ${userText}`;
+  } else if(ocrText){
+    fullPrompt=`OCR extracted from image:\n${ocrText}\n\nQuestion: ${userText}`;
   } else if(localCrop){
-    fullPrompt=userText; // image sent directly via vision API below
+    fullPrompt=userText;
   }
 
   // Build conversation summary for memory (last 16 turns)
@@ -1075,11 +1084,45 @@ aiInput.addEventListener('keydown',e=>{
 aiSend.onclick=handleSend;
 
 function handleSend(){
-  const text=aiInput.value.trim();if(!text)return;
+  const text=aiInput.value.trim();
+  if(!text&&!cropDataUrl)return;
   aiInput.value='';autoResizeInput();
   openAiPanel();
-  sendToAI(text);
+  sendToAI(text||'Please read and solve the problem shown in this image.');
 }
+
+// ── Drag & drop image into chat ───────────────────────────────────────────────
+const aiWrap=$('ai-input-wrap');
+
+function handleImageDrop(file){
+  if(!file||!file.type.startsWith('image/'))return;
+  const reader=new FileReader();
+  reader.onload=ev=>{
+    cropDataUrl=ev.target.result;
+    cropText='';
+    showCropPreview(cropDataUrl);
+    aiInput.focus();
+  };
+  reader.readAsDataURL(file);
+}
+
+aiWrap.addEventListener('dragenter',e=>{e.preventDefault();aiWrap.style.outline='2px dashed #4338ca';});
+aiWrap.addEventListener('dragover',e=>{e.preventDefault();e.dataTransfer.dropEffect='copy';});
+aiWrap.addEventListener('dragleave',e=>{if(!aiWrap.contains(e.relatedTarget))aiWrap.style.outline='';});
+aiWrap.addEventListener('drop',e=>{
+  e.preventDefault();e.stopPropagation();
+  aiWrap.style.outline='';
+  const file=[...e.dataTransfer.files].find(f=>f.type.startsWith('image/'));
+  if(file){handleImageDrop(file);return;}
+  // also handle image dragged from browser (as URL)
+  const url=e.dataTransfer.getData('text/uri-list')||e.dataTransfer.getData('text/plain');
+  if(url&&/\.(png|jpe?g|gif|webp|bmp)(\?|$)/i.test(url)){
+    fetch(url).then(r=>r.blob()).then(b=>handleImageDrop(b)).catch(()=>{});
+  }
+});
+// prevent textarea from receiving drops and showing file text
+aiInput.addEventListener('dragover',e=>e.preventDefault());
+aiInput.addEventListener('drop',e=>{e.preventDefault();e.stopPropagation();});
 
 // Crop & Ask chip
 $('btn-crop-ai').onclick=()=>{
