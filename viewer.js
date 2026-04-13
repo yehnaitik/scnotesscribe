@@ -910,6 +910,22 @@ function renderMarkdown(text){
   return result;
 }
 
+// ── Resize image for vision API (max 1024px, JPEG 85%) ───────────────────────
+function resizeForVision(dataUrl,maxPx=1024){
+  return new Promise(resolve=>{
+    const img=new Image();
+    img.onload=()=>{
+      const scale=Math.min(1,maxPx/Math.max(img.width,img.height,1));
+      const w=Math.round(img.width*scale),h=Math.round(img.height*scale);
+      const c=document.createElement('canvas');c.width=w;c.height=h;
+      c.getContext('2d').drawImage(img,0,0,w,h);
+      resolve(c.toDataURL('image/jpeg',0.85));
+    };
+    img.onerror=()=>resolve(dataUrl);
+    img.src=dataUrl;
+  });
+}
+
 // ── HuggingFace free vision: parallel OCR + captioning ───────────────────────
 async function hfModel(model,imageBytes){
   try{
@@ -961,20 +977,16 @@ async function sendToAI(userText){
     page.cleanup();
   }catch{}
 
-  // If crop present and image-only page → run multi-model vision pipeline
-  let imageAnalysis='';
-  if(localCrop&&!localCropText.trim()){
-    toast('Reading image content… (may take ~15s)');
-    imageAnalysis=await analyzeImageFree(localCrop)||'';
-  }
+  // Resize crop for vision API (keeps payload small, faster response)
+  let visionCrop=localCrop;
+  if(localCrop&&!localCropText) visionCrop=await resizeForVision(localCrop,1024);
 
+  // Build prompt text
   let fullPrompt=userText;
   if(localCropText){
     fullPrompt=`Selected region text:\n"${localCropText}"\n\nQuestion: ${userText}`;
-  } else if(imageAnalysis){
-    fullPrompt=`The selected region is an image. Here is what was extracted from it:\n${imageAnalysis}\n\nBased on this, answer: ${userText}`;
   } else if(localCrop){
-    fullPrompt=`The selected region is an image-only slide (no text could be extracted). The user asks: ${userText}\nPlease help as best you can using any context from the page.`;
+    fullPrompt=userText; // image sent directly via vision API below
   }
 
   // Build conversation summary for memory (last 16 turns)
@@ -987,17 +999,17 @@ async function sendToAI(userText){
     content:`You are Studyink AI, a brilliant academic tutor embedded in Shadowcore Studyink PDF viewer.
 
 PDF: "${fileName}" — Page ${currentPage} of ${numPages}
-Page text: ${pageContext?`"${pageContext}"`:' (image-only page — no selectable text)'}
-${localCropText||imageAnalysis?`\nExtracted from selected region:\n${localCropText||imageAnalysis}`:''}
+Page text: ${pageContext?`"${pageContext}"`:' (image-only page — content is in the attached image)'}
 ${hasHistory?`\nConversation so far:\n${conversationLines}\n`:''}
 
 Rules:
+- The student may attach a cropped image from the PDF — read it carefully and answer based on what you see
 - Remember everything in this conversation and refer back naturally
 - Use markdown: **bold**, ## headers, bullet lists, numbered steps
 - Wrap ALL math in $...$ inline or $$...$$ block (e.g. $x^2$ or $$\\sum_{i=1}^n i$$)
 - Use code blocks for code
 - Be thorough, solve step by step, show full working
-- When given OCR text with equations, parse and solve them carefully`
+- NEVER say you cannot see the image — if an image is attached, read and answer it`
   };
 
   appendMessage('user',userText,localCrop);
@@ -1009,6 +1021,14 @@ Rules:
     content: m.parts[0].text||''
   }));
 
+  // Build final user message — use vision format when image is present
+  const lastUserContent = visionCrop
+    ? [
+        {type:'text', text: fullPrompt||'Please read and solve the problem shown in this image.'},
+        {type:'image_url', image_url:{url: visionCrop, detail:'high'}}
+      ]
+    : fullPrompt;
+
   try{
     const resp=await fetch(FREE_AI_ENDPOINT,{
       method:'POST',
@@ -1018,7 +1038,7 @@ Rules:
         messages:[
           systemMsg,
           ...historyForApi,
-          {role:'user',content:fullPrompt}
+          {role:'user', content: lastUserContent}
         ],
         temperature:0.7,
         max_tokens:2048,
