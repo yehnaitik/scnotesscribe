@@ -280,19 +280,31 @@ html,body{height:100%;overflow:hidden;font-family:'Segoe UI',system-ui,sans-seri
 
   <div class="sep"></div>
 
-  <button class="btn" id="btn-draw" title="Pen">
+  <button class="btn" id="btn-pen" title="Pen (thin smooth)">
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 013 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>
     Pen
   </button>
-  <button class="btn" id="btn-highlight" title="Highlight">
+  <button class="btn" id="btn-marker" title="Marker (thick opaque)">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="4" y1="20" x2="20" y2="4"/><path d="M8 16l-3 3"/></svg>
+    Marker
+  </button>
+  <button class="btn" id="btn-highlight" title="Highlighter (semi-transparent)">
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
-    Highlight
+    Hi-lite
+  </button>
+  <button class="btn" id="btn-laser" title="Laser pointer (temporary glow)">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3" fill="currentColor"/><line x1="12" y1="2" x2="12" y2="5"/><line x1="12" y1="19" x2="12" y2="22"/><line x1="2" y1="12" x2="5" y2="12"/><line x1="19" y1="12" x2="22" y2="12"/></svg>
+    Laser
+  </button>
+  <button class="btn" id="btn-emoji-tool" title="Emoji stamp">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M8 13s1.5 2 4 2 4-2 4-2"/><line x1="9" y1="9" x2="9.01" y2="9"/><line x1="15" y1="9" x2="15.01" y2="9"/></svg>
+    Emoji
   </button>
   <button class="btn" id="btn-eraser" title="Eraser">
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 20H7L3 16l9-9 8 8-4 4"/></svg>
     Erase
   </button>
-  <button class="btn danger" id="btn-clear" title="Clear">
+  <button class="btn danger icon-only" id="btn-clear" title="Clear all drawings">
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 01-2 2H8a2 2 0 01-2-2L5 6"/><path d="M9 6V4h6v2"/></svg>
   </button>
 
@@ -418,26 +430,9 @@ html,body{height:100%;overflow:hidden;font-family:'Segoe UI',system-ui,sans-seri
 
 <!-- Draw panel -->
 <div class="side-panel" id="panel-draw">
-  <div class="panel-header"><h3>Drawing Tools</h3><button class="btn icon-only" id="close-draw">✕</button></div>
+  <div class="panel-header"><h3 id="panel-draw-title">Drawing Tools</h3><button class="btn icon-only" id="close-draw">✕</button></div>
   <div class="panel-body">
-    <div class="panel-section">
-      <label>Brush Type</label>
-      <div class="brush-types">
-        <button class="brush-btn active" data-brush="pen">Pen</button>
-        <button class="brush-btn" data-brush="marker">Marker</button>
-        <button class="brush-btn" data-brush="pencil">Pencil</button>
-        <button class="brush-btn" data-brush="calligraphy">Calligraphy</button>
-      </div>
-    </div>
-    <div class="panel-section">
-      <label>Size: <span id="size-val">3</span>px</label>
-      <input type="range" id="brush-size" min="1" max="30" value="3">
-    </div>
-    <div class="panel-section">
-      <label>Opacity: <span id="opacity-val">100</span>%</label>
-      <input type="range" id="brush-opacity" min="10" max="100" value="100">
-    </div>
-    <div class="panel-section">
+    <div class="panel-section" id="draw-color-section">
       <label>Color</label>
       <div class="color-row">
         <div class="color-swatch active" style="background:#ef4444" data-color="#ef4444"></div>
@@ -450,6 +445,27 @@ html,body{height:100%;overflow:hidden;font-family:'Segoe UI',system-ui,sans-seri
         <div class="color-swatch" style="background:#000000" data-color="#000000"></div>
         <div class="color-swatch" style="background:#ffffff;outline:1px solid #333" data-color="#ffffff"></div>
       </div>
+    </div>
+    <div class="panel-section" id="draw-size-section">
+      <label>Size: <span id="size-val">3</span>px</label>
+      <input type="range" id="brush-size" min="1" max="40" value="3">
+    </div>
+    <div class="panel-section" id="draw-opacity-section">
+      <label>Opacity: <span id="opacity-val">100</span>%</label>
+      <input type="range" id="brush-opacity" min="10" max="100" value="100">
+    </div>
+    <!-- Emoji picker (shown only in emoji mode) -->
+    <div class="panel-section" id="emoji-section" style="display:none">
+      <label>Pick Emoji</label>
+      <div id="emoji-picker" style="display:grid;grid-template-columns:repeat(6,1fr);gap:4px;margin-top:6px"></div>
+      <div style="margin-top:8px">
+        <label style="display:block;margin-bottom:4px">Size: <span id="emoji-size-val">40</span>px</label>
+        <input type="range" id="emoji-size" min="16" max="120" value="40">
+      </div>
+    </div>
+    <!-- Laser tip -->
+    <div class="panel-section" id="laser-section" style="display:none">
+      <p style="font-size:11.5px;color:#6b7db5;line-height:1.6">Move your finger/cursor to draw a glowing red laser trail. Lifts automatically after you stop.<br><br>Use it for live presentations to point at content.</p>
     </div>
   </div>
 </div>
