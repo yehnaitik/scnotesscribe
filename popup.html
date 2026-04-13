@@ -47,6 +47,14 @@ body{width:340px;background:#080810;color:#e0e0f0;font-family:'Segoe UI',system-
 
 .footer{padding:6px 12px 8px;display:flex;justify-content:flex-end}
 .footer span{font-size:9.5px;color:#1a1a30;font-weight:500}
+
+.update-banner{display:none;margin:8px 10px 0;padding:9px 12px;background:linear-gradient(135deg,#1e1040,#2d1b69);border:1px solid #4338ca;border-radius:9px;gap:8px;align-items:center}
+.update-banner.visible{display:flex}
+.update-dot{width:7px;height:7px;border-radius:50%;background:#818cf8;flex-shrink:0;animation:pulse 1.5s infinite}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.3}}
+.update-text{flex:1;font-size:11px;color:#a5b4fc;font-weight:600;line-height:1.3}
+.update-dl{font-size:10.5px;padding:4px 10px;background:#4338ca;color:#fff;border:none;border-radius:6px;cursor:pointer;font-weight:700;flex-shrink:0;text-decoration:none;display:inline-block}
+.update-dl:hover{background:#6366f1}
 </style>
 </head>
 <body>
@@ -57,6 +65,12 @@ body{width:340px;background:#080810;color:#e0e0f0;font-family:'Segoe UI',system-
     <div class="header-name">SHADOWCORE</div>
     <div class="header-sub">Studyink — File Detector</div>
   </div>
+</div>
+
+<div class="update-banner" id="update-banner">
+  <div class="update-dot"></div>
+  <div class="update-text">New update available!<br><span style="font-weight:400;font-size:10px;color:#6366f1" id="update-msg"></span></div>
+  <a class="update-dl" href="https://raw.githubusercontent.com/yehnaitik/scnotesscribe/main/shadowcore-studyink-v2.zip" target="_blank" id="update-dl-btn">Download</a>
 </div>
 
 <div class="file-list" id="file-list">
