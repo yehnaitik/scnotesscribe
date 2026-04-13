@@ -942,6 +942,34 @@ async function hfModel(model,imageBytes){
   }catch{return null;}
 }
 
+// ── OCR.Space: reliable free OCR (primary) ───────────────────────────────────
+async function ocrSpace(dataUrl){
+  try{
+    // Resize to JPEG first so it's under 1MB limit
+    const resized=await resizeForVision(dataUrl,1200);
+    const body=new URLSearchParams({
+      apikey:'K88888888888888',
+      base64Image:resized,
+      language:'eng',
+      isOverlayRequired:'false',
+      detectOrientation:'true',
+      scale:'true',
+      OCREngine:'2'
+    });
+    const r=await fetch('https://api.ocr.space/parse/image',{
+      method:'POST',
+      headers:{'Content-Type':'application/x-www-form-urlencoded'},
+      body:body.toString(),
+      signal:AbortSignal.timeout(20000)
+    });
+    if(!r.ok)return null;
+    const d=await r.json();
+    if(d.IsErroredOnProcessing)return null;
+    const text=d.ParsedResults?.[0]?.ParsedText?.trim();
+    return text||null;
+  }catch{return null;}
+}
+
 async function analyzeImageFree(dataUrl){
   const base64=dataUrl.split(',')[1];
   const binary=atob(base64);
@@ -949,18 +977,14 @@ async function analyzeImageFree(dataUrl){
   for(let i=0;i<binary.length;i++)arr[i]=binary.charCodeAt(i);
   const bytes=arr.buffer;
 
-  // Run all three in parallel: Nougat (math/academic OCR), TrOCR (printed text), BLIP (visual)
-  const [nougat,trocr,blip]=await Promise.all([
-    hfModel('facebook/nougat-base',bytes),
-    hfModel('microsoft/trocr-large-printed',bytes),
-    hfModel('Salesforce/blip-image-captioning-large',bytes)
+  // OCR.Space (primary) + TrOCR (backup) in parallel
+  const [ocr,trocr]=await Promise.all([
+    ocrSpace(dataUrl),
+    hfModel('microsoft/trocr-large-printed',bytes)
   ]);
 
-  const parts=[];
-  if(nougat) parts.push(`Math/text OCR: "${nougat}"`);
-  else if(trocr) parts.push(`OCR text: "${trocr}"`);
-  if(blip&&!nougat) parts.push(`Visual: "${blip}"`);
-  return parts.length?parts.join('\n'):null;
+  const text=ocr||(trocr?`Text: ${trocr}`:null);
+  return text||null;
 }
 
 // ── Send message to AI (free via Pollinations — no key needed) ───────────────
@@ -977,25 +1001,21 @@ async function sendToAI(userText){
     page.cleanup();
   }catch{}
 
-  // Resize crop for vision API + run OCR in parallel as backup context
-  let visionCrop=localCrop;
+  // OCR the image (OCR.Space primary + TrOCR backup)
   let ocrText='';
   if(localCrop&&!localCropText){
-    toast('Analyzing image…');
-    [visionCrop,ocrText]=await Promise.all([
-      resizeForVision(localCrop,1024),
-      analyzeImageFree(localCrop).then(r=>r||'')
-    ]);
+    toast('Reading image… (~5s)');
+    ocrText=await analyzeImageFree(localCrop)||'';
   }
 
-  // Build prompt text — include OCR if available (extra context even if vision works)
+  // Build prompt with extracted text
   let fullPrompt=userText;
   if(localCropText){
     fullPrompt=`Selected region text:\n"${localCropText}"\n\nQuestion: ${userText}`;
   } else if(ocrText){
-    fullPrompt=`OCR extracted from image:\n${ocrText}\n\nQuestion: ${userText}`;
+    fullPrompt=`The selected region contains the following content (extracted via OCR):\n\n${ocrText}\n\nQuestion: ${userText}`;
   } else if(localCrop){
-    fullPrompt=userText;
+    fullPrompt=`The student selected an image region from the PDF. OCR could not extract text. Question: ${userText}. Please help based on any context available.`;
   }
 
   // Build conversation summary for memory (last 16 turns)
@@ -1030,13 +1050,8 @@ Rules:
     content: m.parts[0].text||''
   }));
 
-  // Build final user message — use vision format when image is present
-  const lastUserContent = visionCrop
-    ? [
-        {type:'text', text: fullPrompt||'Please read and solve the problem shown in this image.'},
-        {type:'image_url', image_url:{url: visionCrop, detail:'high'}}
-      ]
-    : fullPrompt;
+  // Pollinations does not support vision — send text only (OCR text is in fullPrompt)
+  const lastUserContent = fullPrompt;
 
   try{
     const resp=await fetch(FREE_AI_ENDPOINT,{
