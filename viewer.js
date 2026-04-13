@@ -836,16 +836,27 @@ function removeThinking(){const t=$('ai-thinking-msg');if(t)t.remove();}
 // ── Markdown + KaTeX renderer ─────────────────────────────────────────────────
 function escHtml(s){return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');}
 
+function renderKaTeX(expr,display){
+  try{
+    if(typeof katex!=='undefined')
+      return katex.renderToString(expr,{displayMode:display,throwOnError:false,output:'html'});
+  }catch{}
+  return display
+    ?`<div class="math-block">${escHtml(expr)}</div>`
+    :`<span class="math-inline">${escHtml(expr)}</span>`;
+}
+
 function renderMarkdown(text){
   let s=text;
 
-  // Block math $$...$$
-  s=s.replace(/\$\$([\s\S]+?)\$\$/g,(_,m)=>`<div class="math-block">${escHtml(m.trim())}</div>`);
-  // Inline math $...$
-  s=s.replace(/\$([^\n\$]+?)\$/g,(_,m)=>`<span class="math-inline">${escHtml(m)}</span>`);
+  // Protect code blocks first (avoid mangling $ inside code)
+  const codeBlocks=[];
+  s=s.replace(/```[\s\S]+?```/g,m=>{codeBlocks.push(m);return`\x00CODE${codeBlocks.length-1}\x00`;});
 
-  // Code blocks
-  s=s.replace(/```(\w*)\n?([\s\S]+?)```/g,(_,lang,code)=>`<pre><code class="lang-${lang}">${escHtml(code.trim())}</code></pre>`);
+  // Block math $$...$$
+  s=s.replace(/\$\$([\s\S]+?)\$\$/g,(_,m)=>renderKaTeX(m.trim(),true));
+  // Inline math $...$  (not inside words, avoid currency)
+  s=s.replace(/(?<![\\$])\$([^\n$`]+?)\$/g,(_,m)=>renderKaTeX(m,false));
 
   // Headings
   s=s.replace(/^### (.+)$/gm,'<h3>$1</h3>');
@@ -889,7 +900,14 @@ function renderMarkdown(text){
     } else {buf.push(line);}
   }
   if(buf.length)out.push('<p>'+buf.join(' ')+'</p>');
-  return out.join('\n');
+  let result=out.join('\n');
+  // Restore protected code blocks
+  result=result.replace(/\x00CODE(\d+)\x00/g,(_,i)=>{
+    const m=codeBlocks[+i];
+    const match=m.match(/```(\w*)\n?([\s\S]+?)```/);
+    return match?`<pre><code class="lang-${match[1]}">${escHtml(match[2].trim())}</code></pre>`:escHtml(m);
+  });
+  return result;
 }
 
 // ── HuggingFace free vision: describe a cropped image ────────────────────────
