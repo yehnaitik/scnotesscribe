@@ -5,6 +5,9 @@
   "description": "Detect PDFs & files on any website. Open them in a blazing-fast canvas-based viewer with virtual rendering — no Google Viewer, no lag. Generate AI handwritten notes. By yeh.naitik.",
   "permissions": ["activeTab", "scripting", "tabs", "storage"],
   "host_permissions": ["<all_urls>"],
+  "content_security_policy": {
+    "extension_pages": "script-src 'self' https://cdn.jsdelivr.net; style-src 'self' https://cdn.jsdelivr.net 'unsafe-inline'; font-src 'self' https://cdn.jsdelivr.net; object-src 'self'"
+  },
   "action": {
     "default_popup": "popup.html",
     "default_icon": {
