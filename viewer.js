@@ -279,84 +279,173 @@ $('btn-info').onclick=()=>{$('panel-info').classList.toggle('open');$('panel-dra
 $('close-info').onclick=()=>$('panel-info').classList.remove('open');
 
 // ═══════════════════════════════════════════════════
-//   DRAWING
+//   DRAWING — pen · marker · highlighter · laser · emoji · eraser
 // ═══════════════════════════════════════════════════
-let drawMode=null,drawColor='#ef4444',drawSize=3,drawOpacity=1,isEraser=false,brushType='pen';
+let drawMode=null; // 'pen'|'marker'|'highlight'|'laser'|'emoji'|'eraser'
+let drawColor='#ef4444',drawSize=3,drawOpacity=1,isEraser=false;
+let selectedEmoji='⭐',emojiSize=40;
 
+// ── Canvas positioning ────────────────────────────────────────────────────────
 function syncDrawCanvas(){
-  // Position canvas exactly over scrollArea, relative to viewer-main (its parent)
   const saRect=scrollArea.getBoundingClientRect();
   const parentRect=drawCanvas.parentElement.getBoundingClientRect();
-  const offTop=saRect.top-parentRect.top;
-  const offLeft=saRect.left-parentRect.left;
   drawCanvas.style.position='absolute';
-  drawCanvas.style.top=offTop+'px';
-  drawCanvas.style.left=offLeft+'px';
-  drawCanvas.style.width=scrollArea.scrollWidth+'px';
-  drawCanvas.style.height=scrollArea.scrollHeight+'px';
-  if(drawCanvas.width!==scrollArea.scrollWidth||drawCanvas.height!==scrollArea.scrollHeight){
-    drawCanvas.width=scrollArea.scrollWidth;
-    drawCanvas.height=scrollArea.scrollHeight;
+  drawCanvas.style.top=(saRect.top-parentRect.top)+'px';
+  drawCanvas.style.left=(saRect.left-parentRect.left)+'px';
+  const sw=scrollArea.scrollWidth,sh=scrollArea.scrollHeight;
+  drawCanvas.style.width=sw+'px';drawCanvas.style.height=sh+'px';
+  if(drawCanvas.width!==sw||drawCanvas.height!==sh){
+    // Preserve existing drawings when resizing
+    let saved=null;
+    try{if(drawCanvas.width>0&&drawCanvas.height>0)saved=drawCtx.getImageData(0,0,drawCanvas.width,drawCanvas.height);}catch{}
+    drawCanvas.width=sw;drawCanvas.height=sh;
+    if(saved)try{drawCtx.putImageData(saved,0,0);}catch{}
   }
 }
 
+// ── Tool panel helpers ────────────────────────────────────────────────────────
+const DRAW_TOOL_IDS=['btn-pen','btn-marker','btn-highlight','btn-laser','btn-emoji-tool','btn-eraser'];
+const TOOL_TITLES={pen:'Pen',marker:'Marker',highlight:'Highlighter',laser:'Laser Pointer',emoji:'Emoji Stamp',eraser:'Eraser'};
+
+function setDrawPanelForMode(mode){
+  $('panel-draw-title').textContent=TOOL_TITLES[mode]||'Drawing Tools';
+  const isLaser=mode==='laser';const isEmoji=mode==='emoji';const isEraser2=mode==='eraser';
+  $('draw-color-section').style.display=(isLaser||isEmoji)?'none':'';
+  $('draw-size-section').style.display=(isLaser||isEmoji)?'none':'';
+  $('draw-opacity-section').style.display=(isLaser||isEmoji||isEraser2)?'none':'';
+  $('emoji-section').style.display=isEmoji?'':'none';
+  $('laser-section').style.display=isLaser?'':'none';
+}
+
 function enableDraw(mode){
-  drawMode=mode;isEraser=mode==='eraser';syncDrawCanvas();drawCanvas.classList.add('active');
-  drawCanvas.classList.remove('crop-mode');
-  ['btn-draw','btn-highlight','btn-eraser'].forEach(id=>$(id)?.classList.remove('active'));
-  if(mode==='draw'){$('btn-draw').classList.add('active');$('panel-draw').classList.add('open');}
-  if(mode==='highlight'){$('btn-highlight').classList.add('active');$('panel-draw').classList.add('open');drawOpacity=0.3;drawSize=18;}
-  if(mode==='eraser')$('btn-eraser').classList.add('active');
+  drawMode=mode;isEraser=mode==='eraser';
+  syncDrawCanvas();drawCanvas.classList.add('active');drawCanvas.classList.remove('crop-mode');
+  DRAW_TOOL_IDS.forEach(id=>$(id)?.classList.remove('active'));
+  const btnMap={pen:'btn-pen',marker:'btn-marker',highlight:'btn-highlight',laser:'btn-laser',emoji:'btn-emoji-tool',eraser:'btn-eraser'};
+  if(btnMap[mode])$(btnMap[mode]).classList.add('active');
+  if(mode==='highlight'){drawOpacity=0.35;drawSize=22;$('brush-size').value=22;$('size-val').textContent=22;$('brush-opacity').value=35;$('opacity-val').textContent=35;}
+  else if(mode==='marker'){drawOpacity=1;drawSize=10;$('brush-size').value=10;$('size-val').textContent=10;}
+  else if(mode==='pen'){drawOpacity=1;drawSize=3;$('brush-size').value=3;$('size-val').textContent=3;}
+  setDrawPanelForMode(mode);
+  $('panel-draw').classList.add('open');
+  if(mode==='laser')stopLaserFade();
 }
 
 function disableDraw(){
+  if(drawMode==='laser')stopLaserFade();
   drawMode=null;drawCanvas.classList.remove('active','crop-mode');
-  ['btn-draw','btn-highlight','btn-eraser'].forEach(id=>$(id)?.classList.remove('active'));
+  DRAW_TOOL_IDS.forEach(id=>$(id)?.classList.remove('active'));
   $('panel-draw').classList.remove('open');
 }
 
-$('btn-draw').onclick=()=>drawMode==='draw'?disableDraw():(drawOpacity=1,drawSize=3,enableDraw('draw'));
-$('btn-highlight').onclick=()=>drawMode==='highlight'?disableDraw():enableDraw('highlight');
-$('btn-eraser').onclick=()=>drawMode==='eraser'?disableDraw():enableDraw('eraser');
+DRAW_TOOL_IDS.forEach(id=>{
+  const el=$(id);if(!el)return;
+  const mode=id.replace('btn-','').replace('-tool','');
+  el.onclick=()=>drawMode===mode?disableDraw():enableDraw(mode);
+});
 $('btn-clear').onclick=()=>{drawCtx.clearRect(0,0,drawCanvas.width,drawCanvas.height);toast('Canvas cleared');};
 $('close-draw').onclick=disableDraw;
 $('brush-size').oninput=e=>{drawSize=+e.target.value;$('size-val').textContent=drawSize;};
 $('brush-opacity').oninput=e=>{drawOpacity=+e.target.value/100;$('opacity-val').textContent=e.target.value;};
-document.querySelectorAll('.color-swatch').forEach(s=>{s.onclick=()=>{document.querySelectorAll('.color-swatch').forEach(x=>x.classList.remove('active'));s.classList.add('active');drawColor=s.dataset.color;};});
-document.querySelectorAll('.brush-btn').forEach(b=>{b.onclick=()=>{document.querySelectorAll('.brush-btn').forEach(x=>x.classList.remove('active'));b.classList.add('active');brushType=b.dataset.brush;};});
+$('emoji-size').oninput=e=>{emojiSize=+e.target.value;$('emoji-size-val').textContent=emojiSize;};
+document.querySelectorAll('.color-swatch').forEach(s=>{
+  s.onclick=()=>{document.querySelectorAll('.color-swatch').forEach(x=>x.classList.remove('active'));s.classList.add('active');drawColor=s.dataset.color;};
+});
 
-function applyBrushStyle(){
-  drawCtx.lineJoin='round';
-  switch(brushType){
-    case'marker':drawCtx.lineCap='square';drawCtx.setLineDash([]);break;
-    case'pencil':drawCtx.lineCap='round';drawCtx.setLineDash([3,2]);break;
-    default:drawCtx.lineCap='round';drawCtx.setLineDash([]);
+// ── Emoji picker ──────────────────────────────────────────────────────────────
+const EMOJIS=['⭐','❤️','🔥','✅','❌','❓','💡','📌','🎯','✏️','📝','👍','👎','😊','😂','🤔','😮','💯','⚡','🏆'];
+(function buildEmojiPicker(){
+  const picker=$('emoji-picker');if(!picker)return;
+  EMOJIS.forEach(em=>{
+    const btn=document.createElement('button');
+    btn.textContent=em;
+    btn.style.cssText='font-size:20px;background:#141428;border:2px solid transparent;border-radius:6px;cursor:pointer;padding:2px;';
+    btn.title=em;
+    btn.onclick=()=>{
+      selectedEmoji=em;
+      picker.querySelectorAll('button').forEach(b=>b.style.borderColor='transparent');
+      btn.style.borderColor='#6366f1';
+    };
+    if(em===selectedEmoji)btn.style.borderColor='#6366f1';
+    picker.appendChild(btn);
+  });
+})();
+
+// ── Laser pointer (overlay canvas, no persistence) ───────────────────────────
+const laserCanvas=document.createElement('canvas');
+laserCanvas.style.cssText='position:fixed;top:0;left:0;width:100%;height:100%;pointer-events:none;z-index:9990;';
+document.body.appendChild(laserCanvas);
+const laserCtx=laserCanvas.getContext('2d');
+function resizeLaser(){laserCanvas.width=window.innerWidth;laserCanvas.height=window.innerHeight;}
+resizeLaser();window.addEventListener('resize',resizeLaser);
+let laserTrail=[],laserFadeTimer=null,laserAnimId=null;
+function laserFrame(){
+  laserCtx.clearRect(0,0,laserCanvas.width,laserCanvas.height);
+  const now=Date.now();
+  laserTrail=laserTrail.filter(p=>now-p.t<700);
+  for(let i=1;i<laserTrail.length;i++){
+    const a=1-(now-laserTrail[i].t)/700;
+    laserCtx.beginPath();laserCtx.moveTo(laserTrail[i-1].x,laserTrail[i-1].y);laserCtx.lineTo(laserTrail[i].x,laserTrail[i].y);
+    laserCtx.strokeStyle=`rgba(255,40,40,${a*0.9})`;laserCtx.lineWidth=3;laserCtx.lineCap='round';
+    laserCtx.shadowColor='rgba(255,80,80,0.8)';laserCtx.shadowBlur=10;laserCtx.stroke();
   }
+  if(laserTrail.length){
+    const p=laserTrail[laserTrail.length-1];const a=1-(now-p.t)/700;
+    laserCtx.beginPath();laserCtx.arc(p.x,p.y,7,0,Math.PI*2);
+    laserCtx.fillStyle=`rgba(255,40,40,${a})`;laserCtx.shadowColor='rgba(255,80,80,1)';laserCtx.shadowBlur=20;laserCtx.fill();
+  }
+  if(laserTrail.length)laserAnimId=requestAnimationFrame(laserFrame);
+  else{laserAnimId=null;laserCtx.clearRect(0,0,laserCanvas.width,laserCanvas.height);}
 }
+function addLaserPoint(x,y){
+  laserTrail.push({x,y,t:Date.now()});
+  clearTimeout(laserFadeTimer);laserFadeTimer=setTimeout(()=>{laserTrail=[];},800);
+  if(!laserAnimId)laserAnimId=requestAnimationFrame(laserFrame);
+}
+function stopLaserFade(){laserTrail=[];clearTimeout(laserFadeTimer);laserCtx.clearRect(0,0,laserCanvas.width,laserCanvas.height);if(laserAnimId){cancelAnimationFrame(laserAnimId);laserAnimId=null;}}
 
-// Convert client coords → canvas-space coords (fixed: uses scrollArea as reference)
+// ── Coordinate helper ─────────────────────────────────────────────────────────
 function getCanvasPos(clientX,clientY){
   const r=scrollArea.getBoundingClientRect();
-  return{x:clientX-r.left+scrollArea.scrollLeft, y:clientY-r.top+scrollArea.scrollTop};
+  return{x:clientX-r.left+scrollArea.scrollLeft,y:clientY-r.top+scrollArea.scrollTop};
 }
 
-// ── Smooth drawing engine (quadratic Bézier midpoint technique) ───────────────
+// ── Core stroke engine ────────────────────────────────────────────────────────
 let isPointerDrawing=false,lastDX=0,lastDY=0;
 
 function strokeBegin(clientX,clientY){
   if(cropMode||!drawMode)return false;
-  const{x,y}=getCanvasPos(clientX,clientY);
-  lastDX=x;lastDY=y;
-  drawCtx.lineWidth=isEraser?drawSize*5:drawSize;
-  applyBrushStyle();
-  if(isEraser){drawCtx.globalCompositeOperation='destination-out';drawCtx.strokeStyle='rgba(0,0,0,1)';drawCtx.globalAlpha=1;}
-  else{drawCtx.globalCompositeOperation='source-over';drawCtx.strokeStyle=drawColor;drawCtx.globalAlpha=drawOpacity;}
+  if(drawMode==='laser'){addLaserPoint(clientX,clientY);return true;}
+  if(drawMode==='emoji'){
+    const{x,y}=getCanvasPos(clientX,clientY);
+    drawCtx.save();drawCtx.font=`${emojiSize}px serif`;drawCtx.textAlign='center';drawCtx.textBaseline='middle';
+    drawCtx.globalAlpha=1;drawCtx.globalCompositeOperation='source-over';
+    drawCtx.shadowColor='transparent';drawCtx.shadowBlur=0;
+    drawCtx.fillText(selectedEmoji,x,y);drawCtx.restore();
+    return true;
+  }
+  const{x,y}=getCanvasPos(clientX,clientY);lastDX=x;lastDY=y;
+  if(isEraser){
+    drawCtx.globalCompositeOperation='destination-out';drawCtx.strokeStyle='rgba(0,0,0,1)';
+    drawCtx.globalAlpha=1;drawCtx.lineWidth=drawSize*5;drawCtx.lineCap='round';drawCtx.lineJoin='round';drawCtx.setLineDash([]);
+  } else if(drawMode==='highlight'){
+    drawCtx.globalCompositeOperation='source-over';drawCtx.strokeStyle=drawColor;drawCtx.globalAlpha=drawOpacity;
+    drawCtx.lineWidth=drawSize;drawCtx.lineCap='square';drawCtx.lineJoin='round';drawCtx.setLineDash([]);
+  } else if(drawMode==='marker'){
+    drawCtx.globalCompositeOperation='source-over';drawCtx.strokeStyle=drawColor;drawCtx.globalAlpha=drawOpacity;
+    drawCtx.lineWidth=drawSize;drawCtx.lineCap='square';drawCtx.lineJoin='round';drawCtx.setLineDash([]);
+  } else {
+    drawCtx.globalCompositeOperation='source-over';drawCtx.strokeStyle=drawColor;drawCtx.globalAlpha=drawOpacity;
+    drawCtx.lineWidth=drawSize;drawCtx.lineCap='round';drawCtx.lineJoin='round';drawCtx.setLineDash([]);
+  }
   drawCtx.beginPath();drawCtx.moveTo(x,y);
   return true;
 }
 
 function strokeMove(clientX,clientY){
   if(!isPointerDrawing||!drawMode||cropMode)return;
+  if(drawMode==='laser'){addLaserPoint(clientX,clientY);return;}
+  if(drawMode==='emoji')return;
   const{x,y}=getCanvasPos(clientX,clientY);
   const midX=(lastDX+x)/2,midY=(lastDY+y)/2;
   drawCtx.quadraticCurveTo(lastDX,lastDY,midX,midY);
@@ -368,41 +457,79 @@ function strokeMove(clientX,clientY){
 function strokeEnd(){
   if(!isPointerDrawing)return;
   isPointerDrawing=false;
-  // Draw final dot if user just clicked without moving
+  if(drawMode==='laser'||drawMode==='emoji')return;
   drawCtx.lineTo(lastDX+0.1,lastDY+0.1);drawCtx.stroke();
   drawCtx.globalAlpha=1;drawCtx.globalCompositeOperation='source-over';drawCtx.setLineDash([]);
 }
 
-// Mouse
+// ── Mouse events ──────────────────────────────────────────────────────────────
 drawCanvas.addEventListener('mousedown',e=>{if(e.button!==0)return;isPointerDrawing=strokeBegin(e.clientX,e.clientY);});
-drawCanvas.addEventListener('mousemove',e=>{strokeMove(e.clientX,e.clientY);});
-['mouseup','mouseleave'].forEach(ev=>drawCanvas.addEventListener(ev,strokeEnd));
+drawCanvas.addEventListener('mousemove',e=>{
+  if(drawMode==='laser'&&!cropMode)addLaserPoint(e.clientX,e.clientY);
+  strokeMove(e.clientX,e.clientY);
+});
+['mouseup','mouseleave'].forEach(ev=>drawCanvas.addEventListener(ev,e=>{
+  if(drawMode==='laser')stopLaserFade();
+  strokeEnd();
+}));
 
-// Touch: 1 finger = draw, 2 fingers = scroll/pinch-zoom
-let touchDrawing=false,lastTouchDist=0;
+// ── Touch: 1-finger draw · 2-finger scroll/zoom ───────────────────────────────
+let touchDrawing=false,lastTouchDist=0,lastTouchMidX=0,lastTouchMidY=0;
+
 drawCanvas.addEventListener('touchstart',e=>{
   if(cropMode)return;
   if(e.touches.length===1&&drawMode){
-    e.preventDefault();touchDrawing=true;isPointerDrawing=strokeBegin(e.touches[0].clientX,e.touches[0].clientY);
+    e.preventDefault();touchDrawing=true;
+    isPointerDrawing=strokeBegin(e.touches[0].clientX,e.touches[0].clientY);
   } else if(e.touches.length>=2){
     e.preventDefault();touchDrawing=false;strokeEnd();
-    lastTouchDist=Math.hypot(e.touches[0].clientX-e.touches[1].clientX,e.touches[0].clientY-e.touches[1].clientY);
+    const t1=e.touches[0],t2=e.touches[1];
+    lastTouchDist=Math.hypot(t1.clientX-t2.clientX,t1.clientY-t2.clientY);
+    lastTouchMidX=(t1.clientX+t2.clientX)/2;lastTouchMidY=(t1.clientY+t2.clientY)/2;
   }
 },{passive:false});
+
 drawCanvas.addEventListener('touchmove',e=>{
   if(e.touches.length===1&&touchDrawing&&drawMode&&!cropMode){
     e.preventDefault();strokeMove(e.touches[0].clientX,e.touches[0].clientY);
   } else if(e.touches.length>=2){
     e.preventDefault();
-    const dist=Math.hypot(e.touches[0].clientX-e.touches[1].clientX,e.touches[0].clientY-e.touches[1].clientY);
-    if(lastTouchDist>0){const delta=dist/lastTouchDist;if(Math.abs(delta-1)>0.01)applyZoom(scale*delta);}
-    lastTouchDist=dist;
+    const t1=e.touches[0],t2=e.touches[1];
+    const dist=Math.hypot(t1.clientX-t2.clientX,t1.clientY-t2.clientY);
+    const midX=(t1.clientX+t2.clientX)/2,midY=(t1.clientY+t2.clientY)/2;
+    if(lastTouchDist>0){
+      const delta=dist/lastTouchDist;
+      if(Math.abs(delta-1)>0.03){applyZoom(scale*delta);}
+      else{scrollArea.scrollLeft+=lastTouchMidX-midX;scrollArea.scrollTop+=lastTouchMidY-midY;}
+    }
+    lastTouchDist=dist;lastTouchMidX=midX;lastTouchMidY=midY;
   }
 },{passive:false});
-['touchend','touchcancel'].forEach(ev=>drawCanvas.addEventListener(ev,()=>{touchDrawing=false;strokeEnd();}));
-scrollArea.addEventListener('touchstart',e=>{if(e.touches.length===2)lastTouchDist=Math.hypot(e.touches[0].clientX-e.touches[1].clientX,e.touches[0].clientY-e.touches[1].clientY);},{passive:true});
-scrollArea.addEventListener('touchmove',e=>{if(e.touches.length===2){const dist=Math.hypot(e.touches[0].clientX-e.touches[1].clientX,e.touches[0].clientY-e.touches[1].clientY);if(lastTouchDist>0){const delta=dist/lastTouchDist;if(Math.abs(delta-1)>0.01)applyZoom(scale*delta);}lastTouchDist=dist;}},{passive:true});
-window.addEventListener('resize',()=>{if(drawMode)syncDrawCanvas();});
+
+['touchend','touchcancel'].forEach(ev=>drawCanvas.addEventListener(ev,()=>{
+  touchDrawing=false;if(drawMode==='laser')stopLaserFade();strokeEnd();
+}));
+
+scrollArea.addEventListener('touchstart',e=>{
+  if(e.touches.length===2){
+    const t1=e.touches[0],t2=e.touches[1];
+    lastTouchDist=Math.hypot(t1.clientX-t2.clientX,t1.clientY-t2.clientY);
+    lastTouchMidX=(t1.clientX+t2.clientX)/2;lastTouchMidY=(t1.clientY+t2.clientY)/2;
+  }
+},{passive:true});
+scrollArea.addEventListener('touchmove',e=>{
+  if(e.touches.length===2){
+    const t1=e.touches[0],t2=e.touches[1];
+    const dist=Math.hypot(t1.clientX-t2.clientX,t1.clientY-t2.clientY);
+    const midX=(t1.clientX+t2.clientX)/2,midY=(t1.clientY+t2.clientY)/2;
+    if(lastTouchDist>0){
+      const delta=dist/lastTouchDist;
+      if(Math.abs(delta-1)>0.03)applyZoom(scale*delta);
+    }
+    lastTouchDist=dist;lastTouchMidX=midX;lastTouchMidY=midY;
+  }
+},{passive:true});
+window.addEventListener('resize',()=>{resizeLaser();if(drawMode)syncDrawCanvas();});
 
 // ═══════════════════════════════════════════════════
 //   CROP SELECTION (Ask AI)
@@ -765,13 +892,26 @@ function renderMarkdown(text){
   return out.join('\n');
 }
 
+// ── HuggingFace free vision: describe a cropped image ────────────────────────
+async function describeImageFree(dataUrl){
+  try{
+    const base64=dataUrl.split(',')[1];
+    const binary=atob(base64);const arr=new Uint8Array(binary.length);
+    for(let i=0;i<binary.length;i++)arr[i]=binary.charCodeAt(i);
+    const resp=await fetch('https://api-inference.huggingface.co/models/Salesforce/blip-image-captioning-large',{
+      method:'POST',headers:{'Content-Type':'application/octet-stream'},body:arr.buffer
+    });
+    if(!resp.ok)return null;
+    const result=await resp.json();
+    if(Array.isArray(result)&&result[0]?.generated_text)return result[0].generated_text;
+    return null;
+  }catch{return null;}
+}
+
 // ── Send message to AI (free via Pollinations — no key needed) ───────────────
 async function sendToAI(userText){
   const localCrop=cropDataUrl;const localCropText=cropText;
   cropDataUrl=null;cropText='';const pending=$('pending-crop');if(pending)pending.remove();
-
-  let fullPrompt=userText;
-  if(localCropText){fullPrompt=`Context from selected PDF region:\n"${localCropText}"\n\nUser question: ${userText}`;}
 
   // Build context from current page
   let pageContext='';
@@ -782,30 +922,50 @@ async function sendToAI(userText){
     page.cleanup();
   }catch{}
 
+  // If crop but no text (image-based PDF), try HuggingFace vision
+  let imageDesc='';
+  if(localCrop&&!localCropText.trim()){
+    toast('Analyzing image…');
+    imageDesc=await describeImageFree(localCrop)||'';
+  }
+
+  let fullPrompt=userText;
+  if(localCropText){
+    fullPrompt=`Selected region text:\n"${localCropText}"\n\nQuestion: ${userText}`;
+  } else if(imageDesc){
+    fullPrompt=`The selected region appears to show: "${imageDesc}"\n\nQuestion: ${userText}`;
+  }
+
+  // Build conversation summary for memory (last 8 turns)
+  const prevHistory=chatHistory.slice(-16);
+  const conversationLines=prevHistory.map(m=>`${m.role==='user'?'Student':'AI'}: ${(m.parts[0]?.text||'').substring(0,300)}`).join('\n');
+  const hasHistory=prevHistory.length>0;
+
   const systemMsg={
     role:'system',
-    content:`You are Studyink AI, an expert academic assistant embedded in Shadowcore Studyink PDF viewer. You help students understand their study materials at a deep level — like a brilliant tutor who always explains clearly.
+    content:`You are Studyink AI, a brilliant academic tutor embedded in Shadowcore Studyink PDF viewer.
 
-PDF Context (current page ${currentPage} of ${numPages}, file: "${fileName}"):
-${pageContext?`"${pageContext}"`:' (text extraction unavailable for this page)'}
-${localCropText?`\nThe student highlighted a specific region — focus your answer on that context.`:''}
+PDF: "${fileName}" — Page ${currentPage} of ${numPages}
+Page content: ${pageContext?`"${pageContext}"`:' (image-only page — no extractable text)'}
+${localCropText||imageDesc?`\nSelected region: ${localCropText||imageDesc}`:''}
+${hasHistory?`\nConversation so far:\n${conversationLines}\n`:''}
 
-Response formatting rules:
-- Use markdown: **bold** key terms, ## section headers, bullet lists, numbered steps
-- For ALL math expressions wrap in $...$ inline or $$...$$ block — e.g. $E = mc^2$ or $$\\int_0^\\infty e^{-x}dx = 1$$
-- Use triple-backtick code blocks for code
-- Structure complex answers with clear headers and spacing
-- Be thorough but don't pad — quality over quantity
-- Always reference the PDF content when answering`
+Rules:
+- Remember everything said above in this conversation and refer back to it naturally
+- Use markdown: **bold**, ## headers, bullet lists, numbered steps
+- Wrap ALL math in $...$ inline or $$...$$ block
+- Use code blocks for code
+- Be thorough, clear, and reference the PDF content
+- If the page is image-only (no text), still help using any context given`
   };
 
   appendMessage('user',userText,localCrop);
   showThinking();aiSend.disabled=true;
 
-  // Build OpenAI messages from chat history (last 12 turns for context)
-  const historyForApi=chatHistory.slice(0,-1).slice(-12).map(m=>({
+  // Build OpenAI messages from chat history (last 16 turns for memory)
+  const historyForApi=chatHistory.slice(0,-1).slice(-16).map(m=>({
     role: m.role==='model'?'assistant':m.role,
-    content: m.parts[0].text
+    content: m.parts[0].text||''
   }));
 
   try{
